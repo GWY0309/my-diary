@@ -356,8 +356,18 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
                         if (_isSelectionMode) {
                           if (diary.id != null) _toggleSelection(diary.id!);
                         } else {
-                          // TODO: 跳转详情页时传递 diary 对象
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => const DiaryDetailScreen()));
+                          // ✅ 传递当前日记对象 (diary) 到详情页
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => DiaryDetailScreen(diary: diary)
+                            ),
+                          ).then((value) {
+                            // 如果从详情页返回（且发生了删除等操作返回了 true），则刷新列表
+                            if (value == true) {
+                              _loadDiaries();
+                            }
+                          });
                         }
                       },
                       onLongPress: () {

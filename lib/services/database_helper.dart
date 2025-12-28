@@ -59,4 +59,15 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.delete('diaries', where: 'id = ?', whereArgs: [id]);
   }
+
+  // 更新日记
+  Future<int> updateDiary(DiaryEntry diary) async {
+    final db = await instance.database;
+    return await db.update(
+      'diaries',
+      diary.toMap(),
+      where: 'id = ?', // 根据 ID 找到那条日记
+      whereArgs: [diary.id],
+    );
+  }
 }
