@@ -1,6 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:image_picker/image_picker.dart';
 import '../constants/colors.dart';
+import '../models/diary_model.dart';
+import '../services/database_helper.dart';
 
 class DiaryEditScreen extends StatefulWidget {
   const DiaryEditScreen({super.key});
@@ -10,16 +15,19 @@ class DiaryEditScreen extends StatefulWidget {
 }
 
 class _DiaryEditScreenState extends State<DiaryEditScreen> {
+  // 控制器定义
   final QuillController _quillController = QuillController.basic();
   final TextEditingController _titleController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
 
-  // 控制工具栏是否显示的变量
+  // 状态变量
   bool _showToolbar = false;
-
-  int _selectedMood = 2;
-  int _selectedWeather = 0;
+  int _selectedMood = 2; // 默认：一般
+  int _selectedWeather = 0; // 默认：晴
   List<String> _selectedTags = [];
+  List<File> _selectedImages = []; // 已选图片列表
 
+  // 图标配置（已移除“雾”）
   final List<IconData> _moodIcons = [
     Icons.sentiment_very_dissatisfied,
     Icons.sentiment_dissatisfied,
@@ -29,13 +37,13 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   ];
 
   final List<IconData> _weatherIcons = [
-    Icons.wb_sunny,
-    Icons.cloud,
-    Icons.wb_cloudy,
-    Icons.umbrella,
-    Icons.ac_unit,
-    Icons.thunderstorm,
-    Icons.air,
+    Icons.wb_sunny,     // 晴
+    Icons.cloud,        // 多云
+    Icons.wb_cloudy,    // 阴
+    Icons.umbrella,     // 雨
+    Icons.ac_unit,      // 雪
+    Icons.thunderstorm, // 雷
+    Icons.air,          // 风
   ];
 
   final List<String> _availableTags = ['生活', '工作', '旅行', '心情', '美食', '学习'];
@@ -47,6 +55,55 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     super.dispose();
   }
 
+  // 选择图片逻辑
+  Future<void> _pickImage() async {
+    if (_selectedImages.length >= 9) {
+      _showSnackBar('最多只能添加9张图片');
+      return;
+    }
+
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _selectedImages.add(File(image.path));
+      });
+    }
+  }
+
+  // 保存日记逻辑
+  Future<void> _saveDiary() async {
+    final title = _titleController.text.trim();
+    // 将 Delta 转换为 JSON 字符串存储
+    final content = jsonEncode(_quillController.document.toDelta().toJson());
+
+    if (title.isEmpty) {
+      _showSnackBar('请输入日记标题');
+      return;
+    }
+
+    // 创建模型
+    final entry = DiaryEntry(
+      title: title,
+      content: content,
+      mood: _selectedMood,
+      weather: _selectedWeather,
+      tags: _selectedTags,
+      date: DateTime.now(),
+    );
+
+    // 写入数据库
+    await DatabaseHelper.instance.insertDiary(entry);
+
+    if (mounted) {
+      _showSnackBar('日记已保存');
+      Navigator.pop(context, true);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -55,21 +112,16 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
         title: const Text('写日记', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
-          // 【新增】：切换工具栏显示的图标按钮
           IconButton(
             icon: Icon(
               _showToolbar ? Icons.text_format : Icons.text_format_outlined,
               color: _showToolbar ? AppColors.primary : AppColors.textSecondaryLight,
             ),
-            onPressed: () {
-              setState(() {
-                _showToolbar = !_showToolbar;
-              });
-            },
+            onPressed: () => setState(() => _showToolbar = !_showToolbar),
             tooltip: "编辑工具",
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: _saveDiary,
             child: const Text('保存',
                 style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
@@ -77,13 +129,13 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       ),
       body: Column(
         children: [
-          // 【核心修改】：使用 AnimatedContainer 实现下拉动画效果
+          // 1. 下拉式工具栏
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
-            height: _showToolbar ? 60 : 0, // 展开高度为 60，折叠为 0
+            height: _showToolbar ? 60 : 0,
             child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(), // 防止内部滚动干扰
+              physics: const NeverScrollableScrollPhysics(),
               child: QuillSimpleToolbar(
                 configurations: QuillSimpleToolbarConfigurations(
                   controller: _quillController,
@@ -94,7 +146,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                   showSearchButton: false,
                   showRedo: false,
                   showUndo: false,
-                  // 可以根据需要在此隐藏更多不需要的按钮以节省空间
                 ),
               ),
             ),
@@ -104,6 +155,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
+                // 2. 标题输入
                 TextField(
                   controller: _titleController,
                   decoration: const InputDecoration(
@@ -114,6 +166,47 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
 
+                // 3. 图片预览区域
+                if (_selectedImages.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: SizedBox(
+                      height: 100,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _selectedImages.length,
+                        itemBuilder: (context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.file(_selectedImages[index],
+                                      width: 100, height: 100, fit: BoxFit.cover),
+                                ),
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _selectedImages.removeAt(index)),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: const BoxDecoration(
+                                          color: Colors.black54, shape: BoxShape.circle),
+                                      child: const Icon(Icons.close, color: Colors.white, size: 16),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                // 4. 选择器与功能按钮行
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Column(
@@ -141,7 +234,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
-                        runSpacing: 4,
+                        runSpacing: 8,
                         children: [
                           ..._selectedTags.map((tag) => Chip(
                             label: Text(tag, style: const TextStyle(fontSize: 12)),
@@ -149,6 +242,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                             deleteIcon: const Icon(Icons.close, size: 14),
                             backgroundColor: AppColors.primaryLight.withOpacity(0.1),
                           )),
+                          ActionChip(
+                            avatar: const Icon(Icons.image_outlined, size: 16, color: AppColors.primary),
+                            label: const Text('添加图片'),
+                            onPressed: _pickImage,
+                          ),
                           ActionChip(
                             avatar: const Icon(Icons.add, size: 16),
                             label: const Text('添加标签'),
@@ -162,6 +260,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
                 const Divider(),
 
+                // 5. 正文编辑器
                 QuillEditor.basic(
                   configurations: QuillEditorConfigurations(
                     controller: _quillController,
@@ -178,7 +277,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
-  // 辅助方法保持不变...
+  // 辅助组件：选择器入口
   Widget _buildSelector({required IconData icon, required String label, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
@@ -196,6 +295,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
+  // 辅助组件：心情/天气选择弹窗
   void _showIconPicker(String title, List<IconData> icons, Function(int) onSelected) {
     showModalBottomSheet(
       context: context,
@@ -233,6 +333,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
+  // 辅助组件：标签选择弹窗
   void _showTagPicker() {
     showModalBottomSheet(
       context: context,

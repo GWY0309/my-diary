@@ -42,7 +42,6 @@ class DiaryListScreen extends StatelessWidget {
               ),
             ],
           ),
-
           // 搜索栏区域
           SliverToBoxAdapter(
             child: Padding(
