@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_quill/flutter_quill.dart' as quill; // 用于解析富文本预览
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import '../constants/colors.dart';
-import '../services/database_helper.dart'; // 导入数据库帮助类
-import '../models/diary_model.dart';       // 导入模型
+import '../services/database_helper.dart';
+import '../models/diary_model.dart';
 import 'diary_edit_screen.dart';
 import 'settings_screen.dart';
 import 'diary_detail_screen.dart';
@@ -18,15 +18,13 @@ class DiaryListScreen extends StatefulWidget {
 }
 
 class _DiaryListScreenState extends State<DiaryListScreen> {
-  // 数据源改为 DiaryEntry 模型列表
   List<DiaryEntry> _allDiaries = [];
   List<DiaryEntry> _filteredDiaries = [];
 
-  bool _isLoading = true; // 加载状态
+  bool _isLoading = true;
   bool _isSelectionMode = false;
-  final Set<int> _selectedIds = {}; // 改为存储 ID 而不是 index
+  final Set<int> _selectedIds = {};
 
-  // 搜索与过滤控制器
   final TextEditingController _searchController = TextEditingController();
   DateTimeRange? _selectedDateRange;
   String? _selectedTag;
@@ -35,7 +33,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDiaries(); // 启动时加载数据
+    _loadDiaries();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -45,14 +43,13 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
     super.dispose();
   }
 
-  // 【核心】从数据库加载数据
   Future<void> _loadDiaries() async {
     setState(() => _isLoading = true);
     try {
       final diaries = await DatabaseHelper.instance.getAllDiaries();
       setState(() {
         _allDiaries = diaries;
-        _filterList(); // 加载后应用当前的过滤条件
+        _filterList();
         _isLoading = false;
       });
     } catch (e) {
@@ -61,30 +58,25 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
     }
   }
 
-  // 搜索逻辑
   void _onSearchChanged() {
     _filterList();
   }
 
-  // 【核心】过滤逻辑适配 DiaryEntry 对象
   void _filterList() {
     final query = _searchController.text.toLowerCase();
 
     setState(() {
       _filteredDiaries = _allDiaries.where((diary) {
-        // 1. 关键词匹配 (标题或纯文本内容)
         final plainContent = _parseQuillContent(diary.content).toLowerCase();
         final matchesQuery = diary.title.toLowerCase().contains(query) ||
             plainContent.contains(query);
 
-        // 2. 日期范围匹配
         bool matchesDate = true;
         if (_selectedDateRange != null) {
           matchesDate = diary.date.isAfter(_selectedDateRange!.start.subtract(const Duration(seconds: 1))) &&
               diary.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
         }
 
-        // 3. 标签匹配
         bool matchesTag = true;
         if (_selectedTag != null) {
           matchesTag = diary.tags.contains(_selectedTag);
@@ -95,24 +87,22 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
     });
   }
 
-  // 【工具】将 Quill JSON 解析为纯文本用于预览
   String _parseQuillContent(String jsonString) {
     try {
       final doc = quill.Document.fromJson(jsonDecode(jsonString));
       return doc.toPlainText().replaceAll('\n', ' ').trim();
     } catch (e) {
-      return ""; // 解析失败返回空
+      return "";
     }
   }
 
-  // 批量删除逻辑 (对接数据库)
   Future<void> _deleteSelected() async {
     for (var id in _selectedIds) {
       await DatabaseHelper.instance.deleteDiary(id);
     }
     _selectedIds.clear();
     _isSelectionMode = false;
-    _loadDiaries(); // 删除后刷新
+    _loadDiaries();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('删除成功')));
     }
@@ -130,21 +120,18 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
     });
   }
 
-  // 跳转到编辑页，并在返回时刷新
+  // 【修复 1】新建日记后的刷新逻辑
   Future<void> _navigateToEdit() async {
     final result = await Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const DiaryEditScreen())
     );
-    // 如果返回 true (表示保存成功)，则刷新列表
-    if (result == true) {
+    // 只要结果不为空（无论是 true 还是 DiaryEntry 对象），都刷新列表
+    if (result != null) {
       _loadDiaries();
     }
   }
 
-  // ... (保留 _pickDateRange, _showTagFilterDialog 等 UI 辅助方法不变) ...
-  // 为节省篇幅，此处省略 _pickDateRange 和 _showTagFilterDialog 的具体实现
-  // 请直接复用您之前代码中的这两个方法，逻辑完全通用
   Future<void> _pickDateRange() async {
     final picked = await showDateRangePicker(
       context: context,
@@ -171,7 +158,6 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   }
 
   void _showTagFilterDialog() {
-    // 简单模拟的标签列表，实际可从数据库聚合获取
     final tags = ['生活', '工作', '旅行', '心情', '美食', '学习'];
     showDialog(
       context: context,
@@ -230,7 +216,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
               if (_isSelectionMode)
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                  onPressed: _deleteSelected, // 调用真实删除
+                  onPressed: _deleteSelected,
                 )
               else ...[
                 IconButton(
@@ -255,7 +241,6 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
                 ),
               ]
             ],
-            // 搜索栏 UI (与之前保持一致)
             bottom: _showSearch ? PreferredSize(
               preferredSize: const Size.fromHeight(80),
               child: Padding(
@@ -317,7 +302,6 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
             ) : null,
           ),
 
-          // 列表区域
           if (_isLoading)
             const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
           else if (_filteredDiaries.isEmpty)
@@ -339,9 +323,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
                 delegate: SliverChildBuilderDelegate(
                       (context, index) {
                     final diary = _filteredDiaries[index];
-                    // 使用数据库 ID 进行选中判断
                     final isSelected = _selectedIds.contains(diary.id);
-                    // 解析预览文本
                     final previewText = _parseQuillContent(diary.content);
 
                     return DiaryCard(
@@ -349,24 +331,21 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
                       content: previewText,
                       date: diary.date,
                       tags: diary.tags,
-                      mood: diary.mood, // 传递心情索引
+                      mood: diary.mood,
                       isSelected: isSelected,
                       isSelectionMode: _isSelectionMode,
                       onTap: () {
                         if (_isSelectionMode) {
                           if (diary.id != null) _toggleSelection(diary.id!);
                         } else {
-                          // ✅ 传递当前日记对象 (diary) 到详情页
+                          // 【修复 2】从详情页返回时也刷新，确保编辑后的内容能显示
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                                 builder: (context) => DiaryDetailScreen(diary: diary)
                             ),
-                          ).then((value) {
-                            // 如果从详情页返回（且发生了删除等操作返回了 true），则刷新列表
-                            if (value == true) {
-                              _loadDiaries();
-                            }
+                          ).then((_) {
+                            _loadDiaries(); // 无论详情页返回什么，都刷新一下列表
                           });
                         }
                       },
@@ -382,7 +361,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
         ],
       ),
       floatingActionButton: _isSelectionMode ? null : FloatingActionButton(
-        onPressed: _navigateToEdit, // 改为调用带刷新的跳转方法
+        onPressed: _navigateToEdit,
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -400,13 +379,13 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   }
 }
 
-// 日记卡片组件
+// DiaryCard 保持不变，可以直接使用您原来的代码，这里省略以节省空间
 class DiaryCard extends StatelessWidget {
   final String title;
   final String content;
   final DateTime date;
   final List<String> tags;
-  final int mood; // 新增心情字段
+  final int mood;
   final bool isSelected;
   final bool isSelectionMode;
   final VoidCallback onTap;
@@ -425,7 +404,6 @@ class DiaryCard extends StatelessWidget {
     required this.onLongPress,
   });
 
-  // 获取心情图标
   IconData _getMoodIcon(int index) {
     const icons = [
       Icons.sentiment_very_dissatisfied,
@@ -438,7 +416,6 @@ class DiaryCard extends StatelessWidget {
     return Icons.sentiment_neutral;
   }
 
-  // 获取心情颜色
   Color _getMoodColor(int index) {
     const colors = [
       AppColors.error,
@@ -498,7 +475,6 @@ class DiaryCard extends StatelessWidget {
                                 style: TextStyle(color: secondaryTextColor, fontSize: 13)),
                           ],
                         ),
-                        // 动态显示心情图标
                         Icon(_getMoodIcon(mood), size: 20, color: _getMoodColor(mood)),
                       ],
                     ),
