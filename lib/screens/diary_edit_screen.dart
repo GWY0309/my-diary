@@ -27,7 +27,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   List<String> _selectedTags = [];
   List<File> _selectedImages = []; // 已选图片列表
 
-  // 图标配置（已移除“雾”）
+  // 图标配置
   final List<IconData> _moodIcons = [
     Icons.sentiment_very_dissatisfied,
     Icons.sentiment_dissatisfied,
@@ -73,7 +73,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   // 保存日记逻辑
   Future<void> _saveDiary() async {
     final title = _titleController.text.trim();
-    // 将 Delta 转换为 JSON 字符串存储
     final content = jsonEncode(_quillController.document.toDelta().toJson());
 
     if (title.isEmpty) {
@@ -81,7 +80,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       return;
     }
 
-    // 创建模型
     final entry = DiaryEntry(
       title: title,
       content: content,
@@ -91,7 +89,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       date: DateTime.now(),
     );
 
-    // 写入数据库
     await DatabaseHelper.instance.insertDiary(entry);
 
     if (mounted) {
@@ -106,24 +103,36 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 【修改1】获取当前主题信息
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 定义动态的次级文字颜色（用于图标未选中状态、提示文字等）
+    final secondaryColor = isDark ? Colors.white70 : AppColors.textSecondaryLight;
+
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      // 【修改2】背景色跟随 Card 颜色 (main.dart 中定义：日间白/夜间深灰)
+      backgroundColor: theme.cardColor,
       appBar: AppBar(
         title: const Text('写日记', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
+        // 确保 AppBar 背景透明或跟随 Scaffold
+        backgroundColor: Colors.transparent,
         actions: [
           IconButton(
             icon: Icon(
               _showToolbar ? Icons.text_format : Icons.text_format_outlined,
-              color: _showToolbar ? AppColors.primary : AppColors.textSecondaryLight,
+              // 【修改3】动态图标颜色
+              color: _showToolbar ? theme.primaryColor : secondaryColor,
             ),
             onPressed: () => setState(() => _showToolbar = !_showToolbar),
             tooltip: "编辑工具",
           ),
           TextButton(
             onPressed: _saveDiary,
-            child: const Text('保存',
-                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text('保存',
+                // 【修改4】动态主色
+                style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
         ],
       ),
@@ -146,6 +155,19 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                   showSearchButton: false,
                   showRedo: false,
                   showUndo: false,
+                  // 这里的图标颜色 Quill 会自动尝试适配，但部分背景可能需微调
+                  buttonOptions: QuillSimpleToolbarButtonOptions(
+                    base: QuillToolbarBaseButtonOptions(
+                      iconTheme: QuillIconTheme(
+                        iconButtonSelectedData: IconButtonData(
+                          color: theme.primaryColor, // 选中颜色
+                        ),
+                        iconButtonUnselectedData: IconButtonData(
+                          color: secondaryColor, // 未选中颜色
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -158,11 +180,13 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                 // 2. 标题输入
                 TextField(
                   controller: _titleController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: '今天的标题...',
                     border: InputBorder.none,
-                    hintStyle: TextStyle(fontSize: 22, color: AppColors.textSecondaryLight),
+                    // 【修改5】提示文字颜色动态化
+                    hintStyle: TextStyle(fontSize: 22, color: theme.hintColor),
                   ),
+                  // 输入文字颜色会自动跟随 theme.textTheme
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
 
@@ -215,6 +239,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                       Row(
                         children: [
                           _buildSelector(
+                            context: context, // 传入 context
                             icon: _moodIcons[_selectedMood],
                             label: "心情",
                             onTap: () => _showIconPicker("选择心情", _moodIcons, (index) {
@@ -223,6 +248,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                           ),
                           const SizedBox(width: 24),
                           _buildSelector(
+                            context: context,
                             icon: _weatherIcons[_selectedWeather],
                             label: "天气",
                             onTap: () => _showIconPicker("选择天气", _weatherIcons, (index) {
@@ -240,10 +266,12 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                             label: Text(tag, style: const TextStyle(fontSize: 12)),
                             onDeleted: () => setState(() => _selectedTags.remove(tag)),
                             deleteIcon: const Icon(Icons.close, size: 14),
-                            backgroundColor: AppColors.primaryLight.withOpacity(0.1),
+                            // 【修改6】Chip 背景色动态化
+                            backgroundColor: theme.primaryColor.withOpacity(0.1),
                           )),
                           ActionChip(
-                            avatar: const Icon(Icons.image_outlined, size: 16, color: AppColors.primary),
+                            // 【修改7】ActionChip 图标颜色
+                            avatar: Icon(Icons.image_outlined, size: 16, color: theme.primaryColor),
                             label: const Text('添加图片'),
                             onPressed: _pickImage,
                           ),
@@ -261,12 +289,14 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                 const Divider(),
 
                 // 5. 正文编辑器
+                // 注意：flutter_quill 默认会适配 Theme，但在深色背景下可能需要显式配置样式
                 QuillEditor.basic(
                   configurations: QuillEditorConfigurations(
                     controller: _quillController,
                     readOnly: false,
                     placeholder: '记录今天的故事...',
                     padding: EdgeInsets.zero,
+                    // 确保输入文字颜色正确（通常不需要手动设置，Quill 会跟随 Theme.textTheme）
                   ),
                 ),
               ],
@@ -278,7 +308,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   }
 
   // 辅助组件：选择器入口
-  Widget _buildSelector({required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _buildSelector({required BuildContext context, required IconData icon, required String label, required VoidCallback onTap}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final secondaryColor = isDark ? Colors.white70 : AppColors.textSecondaryLight;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -286,9 +320,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, size: 22, color: AppColors.primary),
+            // 【修改8】图标颜色动态化
+            Icon(icon, size: 22, color: theme.primaryColor),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: AppColors.textSecondaryLight, fontSize: 14)),
+            // 【修改9】标签文字颜色动态化
+            Text(label, style: TextStyle(color: secondaryColor, fontSize: 14)),
           ],
         ),
       ),
@@ -299,8 +335,14 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   void _showIconPicker(String title, List<IconData> icons, Function(int) onSelected) {
     showModalBottomSheet(
       context: context,
+      // 允许 BottomSheet 自动适配深色模式背景
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        // 未选中图标的颜色
+        final unselectedColor = isDark ? Colors.white38 : Colors.grey;
+
         return Container(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -312,12 +354,14 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                 spacing: 20,
                 runSpacing: 20,
                 children: List.generate(icons.length, (index) {
+                  final isSelected = index == (title == "选择心情" ? _selectedMood : _selectedWeather);
                   return IconButton(
-                    icon: Icon(icons[index],
-                        color: index == (title == "选择心情" ? _selectedMood : _selectedWeather)
-                            ? AppColors.primary
-                            : Colors.grey,
-                        size: 32),
+                    icon: Icon(
+                      icons[index],
+                      // 【修改10】弹窗内图标颜色动态化
+                      color: isSelected ? theme.primaryColor : unselectedColor,
+                      size: 32,
+                    ),
                     onPressed: () {
                       onSelected(index);
                       Navigator.pop(context);

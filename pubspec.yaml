@@ -34,6 +34,9 @@ dependencies:
   image_picker: ^0.8.0
   local_auth: ^2.0.0 # 生物识别解锁
 
+  # 强大的图表库，用于统计页面
+  fl_chart: ^0.66.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

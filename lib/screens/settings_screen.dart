@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // 【新增】导入 provider
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/colors.dart';
+import '../providers/theme_provider.dart'; // 【新增】导入主题提供者
 import 'settings/app_lock_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -15,9 +17,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final LocalAuthentication _auth = LocalAuthentication();
   final _storage = const FlutterSecureStorage();
 
-  bool _isBiometricEnabled = false; // 生物识别开关状态
-  bool _isAppLockEnabled = false;   // 【新增】应用锁总开关状态
-  bool _isPinSet = false;           // 是否已设置过密码
+  bool _isBiometricEnabled = false;
+  bool _isAppLockEnabled = false;
+  bool _isPinSet = false;
 
   @override
   void initState() {
@@ -25,35 +27,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
-  /// 加载所有安全配置
   Future<void> _loadSettings() async {
     String? bioEnabled = await _storage.read(key: 'biometric_enabled');
-    String? lockEnabled = await _storage.read(key: 'app_lock_enabled'); // 读取总开关
+    String? lockEnabled = await _storage.read(key: 'app_lock_enabled');
     String? pin = await _storage.read(key: 'app_lock_pin');
 
-    setState(() {
-      _isBiometricEnabled = bioEnabled == 'true';
-      _isAppLockEnabled = lockEnabled == 'true';
-      _isPinSet = pin != null;
-    });
+    if (mounted) {
+      setState(() {
+        _isBiometricEnabled = bioEnabled == 'true';
+        _isAppLockEnabled = lockEnabled == 'true';
+        _isPinSet = pin != null;
+      });
+    }
   }
 
-  /// 【核心逻辑】切换应用锁开关
   Future<void> _toggleAppLock(bool value) async {
     if (value) {
-      // 开启逻辑
       if (_isPinSet) {
-        // 如果密码已存在，直接开启
         await _storage.write(key: 'app_lock_enabled', value: 'true');
         setState(() => _isAppLockEnabled = true);
       } else {
-        // 如果密码不存在，去设置页
         await _navigateToSetPin();
       }
     } else {
-      // 关闭逻辑
       await _storage.write(key: 'app_lock_enabled', value: 'false');
-      // 联动关闭生物识别（因为生物识别依赖应用锁）
       await _storage.write(key: 'biometric_enabled', value: 'false');
 
       setState(() {
@@ -63,10 +60,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// 切换生物识别开关
   Future<void> _toggleBiometric(bool value) async {
     if (value) {
-      // 开启前检查：必须先开启应用锁
       if (!_isAppLockEnabled) {
         _showSnackBar("请先开启数字密码锁");
         return;
@@ -85,13 +80,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isBiometricEnabled = value);
   }
 
-  /// 跳转到密码设置页
   Future<void> _navigateToSetPin() async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const AppLockScreen()),
     );
-    // 返回后刷新状态
     _loadSettings();
   }
 
@@ -101,8 +94,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 【关键修复 1】：获取 ThemeProvider 实例
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
+      // 使用主题背景色，而不是硬编码的颜色，确保切换时背景也会变
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('设置', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
@@ -113,37 +110,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           const SizedBox(height: 16),
           _buildSectionTitle('通用'),
+
+          // 【关键修复 2】：连接真实的开关逻辑
           _buildSettingsTile(
             icon: Icons.dark_mode_outlined,
             title: '深色模式',
-            trailing: Switch(value: false, onChanged: (v) {}, activeColor: AppColors.primary),
+            trailing: Switch(
+              // 绑定当前是否为深色模式
+              value: themeProvider.isDarkMode,
+              // 绑定切换逻辑
+              onChanged: (value) {
+                themeProvider.toggleTheme(value);
+              },
+              activeColor: AppColors.primary,
+            ),
           ),
 
           const Divider(height: 32),
           _buildSectionTitle('安全'),
 
-          // 1. 数字密码锁（带开关）
           _buildSettingsTile(
             icon: Icons.lock_outline,
             title: '数字密码锁',
-            // 如果已开启，点击整行可以去修改密码；如果未开启，点击无反应或去开启
             onTap: _isAppLockEnabled ? _navigateToSetPin : null,
             trailing: Switch(
               value: _isAppLockEnabled,
-              onChanged: _toggleAppLock, // 绑定新逻辑
+              onChanged: _toggleAppLock,
               activeColor: AppColors.primary,
             ),
           ),
 
-          // 2. 生物识别解锁
           _buildSettingsTile(
             icon: Icons.fingerprint,
             title: '生物识别解锁',
-            // 如果主开关没开，禁用此选项
             onTap: _isAppLockEnabled ? () => _toggleBiometric(!_isBiometricEnabled) : null,
             trailing: Switch(
               value: _isBiometricEnabled,
-              onChanged: _isAppLockEnabled ? _toggleBiometric : null, // 禁用状态处理
+              onChanged: _isAppLockEnabled ? _toggleBiometric : null,
               activeColor: AppColors.primary,
             ),
           ),
@@ -173,13 +176,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Widget? trailing,
     VoidCallback? onTap
   }) {
+    // 获取当前主题的卡片颜色，确保在深色模式下列表项背景正确
+    // 如果没有特别定义卡片颜色，可以使用 Theme.of(context).cardColor
+    final tileColor = Theme.of(context).cardColor;
+
     return ListTile(
-      leading: Icon(icon, color: AppColors.textPrimaryLight),
+      leading: Icon(icon, color: AppColors.textPrimaryLight), // 注意：这里的颜色可能也需要根据主题适配，后续可以优化
       title: Text(title, style: const TextStyle(fontSize: 15)),
       trailing: trailing ?? const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
       onTap: onTap,
-      tileColor: AppColors.surfaceLight,
-      // 视觉上区分禁用状态
+      tileColor: tileColor, // 使用动态颜色
       enabled: onTap != null || trailing is Switch,
     );
   }
