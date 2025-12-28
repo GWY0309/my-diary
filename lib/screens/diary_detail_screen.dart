@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io'; // 记得导入 dart:io 用于显示本地图片
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +9,6 @@ import '../services/database_helper.dart';
 import 'diary_edit_screen.dart';
 
 class DiaryDetailScreen extends StatefulWidget {
-  // 1. 接收从列表页传来的日记对象
   final DiaryEntry diary;
 
   const DiaryDetailScreen({super.key, required this.diary});
@@ -19,31 +19,27 @@ class DiaryDetailScreen extends StatefulWidget {
 
 class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
   late QuillController _controller;
-  late DiaryEntry _currentDiary; // 用于本地显示和更新的数据
+  late DiaryEntry _currentDiary;
 
   @override
   void initState() {
     super.initState();
-    _currentDiary = widget.diary; // 初始化为传入的数据
+    _currentDiary = widget.diary;
     _loadContent();
   }
 
-  // 2. 解析富文本内容
   void _loadContent() {
     try {
       final doc = Document.fromJson(jsonDecode(_currentDiary.content));
       _controller = QuillController(
         document: doc,
         selection: const TextSelection.collapsed(offset: 0),
-        // 注意：不要在构造函数中设置 readOnly: true，否则可能报错
       );
-      // 【关键】初始化后设置只读属性
     } catch (e) {
       _controller = QuillController.basic();
     }
   }
 
-  // 获取心情图标
   IconData _getMoodIcon(int index) {
     const icons = [
       Icons.sentiment_very_dissatisfied,
@@ -55,7 +51,6 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
     return (index >= 0 && index < icons.length) ? icons[index] : Icons.sentiment_neutral;
   }
 
-  // 获取心情颜色
   Color _getMoodColor(int index) {
     const colors = [
       AppColors.error,
@@ -67,7 +62,6 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
     return (index >= 0 && index < colors.length) ? colors[index] : Colors.grey;
   }
 
-  // 删除确认逻辑
   void _confirmDelete() {
     showDialog(
       context: context,
@@ -81,8 +75,8 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
               if (_currentDiary.id != null) {
                 await DatabaseHelper.instance.deleteDiary(_currentDiary.id!);
                 if (mounted) {
-                  Navigator.pop(context); // 关闭弹窗
-                  Navigator.pop(context, true); // 返回列表页并通知刷新
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
                 }
               }
             },
@@ -106,11 +100,9 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
         elevation: 0,
         iconTheme: theme.iconTheme,
         actions: [
-          // 【核心功能】编辑按钮
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             onPressed: () async {
-              // 1. 跳转到编辑页，并将当前日记传过去
               final updatedDiary = await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -118,11 +110,10 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
                 ),
               );
 
-              // 2. 如果返回了更新后的数据，立即刷新界面
               if (updatedDiary != null && updatedDiary is DiaryEntry) {
                 setState(() {
                   _currentDiary = updatedDiary;
-                  _loadContent(); // 重新解析富文本，因为内容可能变了
+                  _loadContent();
                 });
               }
             },
@@ -136,7 +127,6 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // 3. 使用 _currentDiary 显示数据（确保编辑后能变）
           Text(
             _currentDiary.title,
             style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -152,7 +142,6 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
               const Spacer(),
               Icon(_getMoodIcon(_currentDiary.mood), size: 24, color: _getMoodColor(_currentDiary.mood)),
               const SizedBox(width: 8),
-              // 天气暂用固定图标，您也可以仿照 mood 写个 _getWeatherIcon
               const Icon(Icons.wb_sunny, size: 24, color: AppColors.warning),
             ],
           ),
@@ -167,29 +156,55 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
               )).toList(),
             ),
 
+          // 【新增】图片展示区域
+          if (_currentDiary.images.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: SizedBox(
+                height: 120,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _currentDiary.images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_currentDiary.images[index]), // 显示本地图片
+                        width: 120,
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (ctx, err, stack) => Container(
+                            width: 120, height: 120, color: Colors.grey,
+                            child: const Icon(Icons.error)
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
             child: Divider(),
           ),
 
-          // 4. 正文预览
           QuillEditor.basic(
             configurations: QuillEditorConfigurations(
               controller: _controller,
-              showCursor: false,
               readOnly: true,
+              showCursor: false,
               enableInteractiveSelection: true,
               padding: EdgeInsets.zero,
               sharedConfigurations: const QuillSharedConfigurations(
                 locale: Locale('zh', 'CN'),
               ),
-              // 【关键修改】：自定义样式，显式指定颜色
-              customStyles: DefaultStyles( // 注意：这里把 const 去掉了
+              customStyles: DefaultStyles(
                 paragraph: DefaultTextBlockStyle(
                     TextStyle(
                       fontSize: 16,
                       height: 1.6,
-                      // 根据主题亮度决定颜色：深色模式用白色，浅色模式用深灰/黑色
                       color: isDark ? Colors.white : const Color(0xFF202124),
                     ),
                     const VerticalSpacing(0, 0),
@@ -205,7 +220,6 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
   }
 }
 
-// 标签组件
 class DetailTagChip extends StatelessWidget {
   final String label;
   final Color color;

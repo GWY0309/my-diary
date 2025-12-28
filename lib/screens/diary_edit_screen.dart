@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart'; // 【新增】
+import 'package:path/path.dart' as path;         // 【新增】
 import '../constants/colors.dart';
 import '../models/diary_model.dart';
 import '../services/database_helper.dart';
@@ -19,7 +21,7 @@ class DiaryEditScreen extends StatefulWidget {
 class _DiaryEditScreenState extends State<DiaryEditScreen> {
   late QuillController _quillController;
   late TextEditingController _titleController;
-  // 【新增 1】定义 FocusNode 用于控制编辑器焦点
+  // 保留您的 focusNode 修复
   final FocusNode _editorFocusNode = FocusNode();
 
   final ImagePicker _picker = ImagePicker();
@@ -29,7 +31,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   int _selectedMood = 2;
   int _selectedWeather = 0;
   List<String> _selectedTags = [];
-  List<File> _selectedImages = [];
+  List<String> _selectedImages = []; // 【修改】改为存储路径字符串
 
   final List<IconData> _moodIcons = [
     Icons.sentiment_very_dissatisfied,
@@ -59,6 +61,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       _selectedMood = d.mood;
       _selectedWeather = d.weather;
       _selectedTags = List.from(d.tags);
+      _selectedImages = List.from(d.images); // 【新增】回显图片
 
       try {
         final doc = Document.fromJson(jsonDecode(d.content));
@@ -79,10 +82,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   void dispose() {
     _quillController.dispose();
     _titleController.dispose();
-    _editorFocusNode.dispose(); // 【新增 2】销毁 FocusNode
+    _editorFocusNode.dispose();
     super.dispose();
   }
 
+  // 【核心修改】保存逻辑：处理图片持久化
   Future<void> _saveDiary() async {
     final title = _titleController.text.trim();
     final content = jsonEncode(_quillController.document.toDelta().toJson());
@@ -92,6 +96,27 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       return;
     }
 
+    // 1. 处理图片：将临时路径的图片拷贝到 App 文档目录
+    List<String> finalImagePaths = [];
+    final appDir = await getApplicationDocumentsDirectory();
+
+    for (String imgPath in _selectedImages) {
+      final file = File(imgPath);
+      if (await file.exists()) {
+        // 如果图片已经在 App 目录下（说明是旧图），直接保留
+        if (path.isWithin(appDir.path, imgPath)) {
+          finalImagePaths.add(imgPath);
+        } else {
+          // 如果是新选的图，复制进来
+          final fileName = path.basename(imgPath);
+          final newPath = '${appDir.path}/$fileName';
+          await file.copy(newPath);
+          finalImagePaths.add(newPath);
+        }
+      }
+    }
+
+    // 2. 创建对象
     final newEntry = DiaryEntry(
       id: widget.diary?.id,
       title: title,
@@ -99,9 +124,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       mood: _selectedMood,
       weather: _selectedWeather,
       tags: _selectedTags,
+      images: finalImagePaths, // 保存最终路径
       date: widget.diary?.date ?? DateTime.now(),
     );
 
+    // 3. 写入数据库
     if (widget.diary == null) {
       await DatabaseHelper.instance.insertDiary(newEntry);
     } else {
@@ -119,14 +146,14 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   Future<void> _pickImage() async {
     if (_selectedImages.length >= 9) return;
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) setState(() => _selectedImages.add(File(image.path)));
+    // 【修改】直接存路径字符串
+    if (image != null) setState(() => _selectedImages.add(image.path));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final secondaryColor = isDark ? Colors.white70 : AppColors.textSecondaryLight;
+    final secondaryColor = theme.brightness == Brightness.dark ? Colors.white70 : AppColors.textSecondaryLight;
 
     return Scaffold(
       backgroundColor: theme.cardColor,
@@ -179,15 +206,10 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
           Expanded(
             child: GestureDetector(
-              // 【新增 3】点击空白处自动聚焦编辑器
-              // behavior: HitTestBehavior.translucent 确保即使点击透明区域也能触发
               behavior: HitTestBehavior.translucent,
               onTap: () {
-                // 如果当前并没有聚焦在编辑器上，则聚焦它
                 if (!_editorFocusNode.hasFocus) {
                   _editorFocusNode.requestFocus();
-                  // 可选：如果想把光标移到最后，可以把下面这行解开
-                  // _quillController.moveCursorToEnd();
                 }
               },
               child: ListView(
@@ -203,6 +225,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
 
+                  // 图片展示
                   if (_selectedImages.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12.0),
@@ -218,8 +241,10 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                                 children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(12),
-                                    child: Image.file(_selectedImages[index],
-                                        width: 100, height: 100, fit: BoxFit.cover),
+                                    child: Image.file(
+                                        File(_selectedImages[index]), // 【修改】从路径创建 File
+                                        width: 100, height: 100, fit: BoxFit.cover
+                                    ),
                                   ),
                                   Positioned(
                                     top: 4,
@@ -268,6 +293,11 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                               backgroundColor: theme.primaryColor.withOpacity(0.1),
                             )),
                             ActionChip(
+                              avatar: const Icon(Icons.image_outlined, size: 16),
+                              label: const Text('添加图片'),
+                              onPressed: _pickImage,
+                            ),
+                            ActionChip(
                               avatar: const Icon(Icons.add, size: 16),
                               label: const Text('添加标签'),
                               onPressed: _showTagPicker,
@@ -280,11 +310,10 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
                   const Divider(),
 
-                  // 编辑器区域
-                  // 我们给编辑器一个最小高度，或者仅仅依靠父级的 GestureDetector 来处理空白点击
                   Container(
-                    constraints: const BoxConstraints(minHeight: 300), // 可选：给个最小高度让体验更好
+                    constraints: const BoxConstraints(minHeight: 300),
                     child: QuillEditor.basic(
+                      // 【保留修复】focusNode 放在正确的位置
                       focusNode: _editorFocusNode,
                       configurations: QuillEditorConfigurations(
                         controller: _quillController,
@@ -305,6 +334,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
+  // 辅助方法保持不变
   Widget _buildSelector(BuildContext context, IconData icon, String label, VoidCallback onTap) {
     final theme = Theme.of(context);
     final secondaryColor = theme.brightness == Brightness.dark ? Colors.white70 : AppColors.textSecondaryLight;
