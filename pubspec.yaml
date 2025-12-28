@@ -1,0 +1,50 @@
+name: my_diary_demo
+description: A new Flutter project.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=2.17.0 <4.0.0' # 确保支持空安全
+
+# 注意：dependencies 是顶层属性，左侧不要有空格
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 状态管理
+  flutter_bloc: ^8.1.0
+  provider: ^6.0.0
+
+  # Firebase 核心服务
+  firebase_core: ^1.17.0
+  firebase_auth: ^3.3.0
+  cloud_firestore: ^3.1.0
+  firebase_storage: ^10.2.0
+
+  # 数据存储与加密
+  sqflite: ^2.0.0
+  hive: ^2.0.0
+  hive_flutter: ^1.1.0
+  path_provider: ^2.0.0
+  flutter_secure_storage: ^8.0.0
+  encrypt: ^5.0.0
+
+  # UI 功能组件
+  flutter_quill: ^7.0.0 # 富文本编辑器
+  image_picker: ^0.8.0
+  local_auth: ^2.0.0 # 生物识别解锁
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # Hive 代码生成工具
+  hive_generator: ^2.0.0
+  build_runner: ^2.0.0
+
+# 注意：这个 flutter 标签也是顶层属性
+flutter:
+  uses-material-design: true # 启用 Material Design 3 规范
+
+  # 如果后续有图片资源或字体，写在这里
+  # assets:
+  #   - assets/images/
