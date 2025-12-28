@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'constants/colors.dart';
-import 'screens/diary_list_screen.dart'; // 导入我们创建的日记列表页面
+import 'screens/splash_screen.dart';
+import 'screens/auth/login_screen.dart';
 
 void main() {
   runApp(const MyDiaryApp());
@@ -55,7 +56,7 @@ class MyDiaryApp extends StatelessWidget {
       ),
 
       // 设置首页为真正的日记列表页面
-      home: const DiaryListScreen(),
+      home: const SplashScreen(),
     );
   }
 }

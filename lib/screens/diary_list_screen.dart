@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../constants/colors.dart';
 import 'diary_edit_screen.dart';
 import 'settings_screen.dart';
+import 'diary_detail_screen.dart';
+import 'statistics_screen.dart';
 
 class DiaryListScreen extends StatelessWidget {
   const DiaryListScreen({super.key});
@@ -27,6 +29,12 @@ class DiaryListScreen extends StatelessWidget {
             ),
             actions: [
               IconButton(
+                icon: const Icon(Icons.bar_chart_rounded, color: AppColors.textSecondaryLight),
+                onPressed: () => Navigator.push(
+                    context, MaterialPageRoute(builder: (context) => const StatisticsScreen())
+                ),
+              ),
+              IconButton(
                 icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondaryLight),
                 onPressed: () => Navigator.push(
                     context, MaterialPageRoute(builder: (context) => const SettingsScreen())
@@ -43,6 +51,12 @@ class DiaryListScreen extends StatelessWidget {
                 decoration: InputDecoration(
                   hintText: '搜索日记、标签...',
                   prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () {
+                      // TODO: 清空搜索逻辑
+                    },
+                  ),
                   filled: true,
                   fillColor: AppColors.surfaceLight,
                   contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -96,7 +110,12 @@ class DiaryCard extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {},
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const DiaryDetailScreen()),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
