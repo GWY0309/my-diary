@@ -16,10 +16,10 @@ dependencies:
   provider: ^6.0.0
 
   # Firebase 核心服务
-  firebase_core: ^1.17.0
-  firebase_auth: ^3.3.0
-  cloud_firestore: ^3.1.0
-  firebase_storage: ^10.2.0
+  firebase_core: ^2.0.0
+  firebase_auth: ^4.0.0
+  cloud_firestore: ^4.0.0
+  firebase_storage: ^11.0.0
 
   # 数据存储与加密
   sqflite: ^2.0.0
@@ -30,7 +30,7 @@ dependencies:
   encrypt: ^5.0.0
 
   # UI 功能组件
-  flutter_quill: ^7.0.0 # 富文本编辑器
+  flutter_quill: ^9.0.0 # 富文本编辑器
   image_picker: ^0.8.0
   local_auth: ^2.0.0 # 生物识别解锁
 
