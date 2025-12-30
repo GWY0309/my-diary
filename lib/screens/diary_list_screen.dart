@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 【新增 1】导入 services 库用于退出 App
 import 'package:intl/intl.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import '../constants/colors.dart';
@@ -29,6 +30,9 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   DateTimeRange? _selectedDateRange;
   String? _selectedTag;
   bool _showSearch = false;
+
+  // 【新增 2】定义变量，记录上次按返回键的时间
+  DateTime? _lastPressedAt;
 
   @override
   void initState() {
@@ -120,13 +124,11 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
     });
   }
 
-  // 【修复 1】新建日记后的刷新逻辑
   Future<void> _navigateToEdit() async {
     final result = await Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const DiaryEditScreen())
     );
-    // 只要结果不为空（无论是 true 还是 DiaryEntry 对象），都刷新列表
     if (result != null) {
       _loadDiaries();
     }
@@ -191,179 +193,229 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: _showSearch ? 140.0 : 60.0,
-            floating: true,
-            pinned: true,
-            elevation: 0,
-            backgroundColor: theme.scaffoldBackgroundColor,
-            iconTheme: theme.iconTheme,
-            leading: _isSelectionMode
-                ? IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() {
-              _isSelectionMode = false;
-              _selectedIds.clear();
-            }))
-                : null,
-            title: _isSelectionMode
-                ? Text('已选 ${_selectedIds.length}', style: TextStyle(color: theme.textTheme.bodyLarge?.color))
-                : Text('我的日记', style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold)),
-            centerTitle: true,
-            actions: [
-              if (_isSelectionMode)
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                  onPressed: _deleteSelected,
-                )
-              else ...[
-                IconButton(
-                  icon: Icon(_showSearch ? Icons.search_off : Icons.search, color: theme.iconTheme.color),
-                  onPressed: () => setState(() {
-                    _showSearch = !_showSearch;
-                    if (!_showSearch) {
-                      _searchController.clear();
-                      _selectedDateRange = null;
-                      _selectedTag = null;
-                      _filterList();
-                    }
-                  }),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.bar_chart_rounded),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const StatisticsScreen())),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
-                ),
-              ]
-            ],
-            bottom: _showSearch ? PreferredSize(
-              preferredSize: const Size.fromHeight(80),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: '搜索日记...',
-                        hintStyle: TextStyle(color: theme.hintColor),
-                        prefixIcon: Icon(Icons.search, color: theme.hintColor),
-                        filled: true,
-                        fillColor: theme.cardColor,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                        suffixIcon: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.calendar_month,
-                                  color: _selectedDateRange != null ? AppColors.primary : theme.hintColor),
-                              onPressed: _pickDateRange,
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.local_offer,
-                                  color: _selectedTag != null ? AppColors.primary : theme.hintColor),
-                              onPressed: _showTagFilterDialog,
-                            ),
-                          ],
-                        ),
-                      ),
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                    if (_selectedDateRange != null || _selectedTag != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Row(
-                          children: [
-                            if (_selectedDateRange != null)
-                              _buildFilterChip(
-                                label: '${DateFormat('MM/dd').format(_selectedDateRange!.start)} - ${DateFormat('MM/dd').format(_selectedDateRange!.end)}',
-                                onDeleted: () { setState(() => _selectedDateRange = null); _filterList(); },
-                              ),
-                            if (_selectedTag != null)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 8.0),
-                                child: _buildFilterChip(
-                                  label: '#$_selectedTag',
-                                  onDeleted: () { setState(() => _selectedTag = null); _filterList(); },
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ) : null,
-          ),
+    // 【新增 3】使用 PopScope 包裹 Scaffold，拦截返回事件
+    return PopScope(
+      canPop: false, // 设置为 false，表示我们要自己处理返回逻辑
+      // 注意：如果您的 Flutter 版本较低(<3.22)，请使用 onPopInvoked(didPop)
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) {
+          return;
+        }
 
-          if (_isLoading)
-            const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
-          else if (_filteredDiaries.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 100),
-                child: Column(
-                  children: [
-                    Icon(Icons.inbox, size: 64, color: theme.disabledColor),
-                    const SizedBox(height: 16),
-                    Text('没有找到日记', style: TextStyle(color: theme.disabledColor)),
-                  ],
-                ),
-              ),
-            )
-          else SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                    final diary = _filteredDiaries[index];
-                    final isSelected = _selectedIds.contains(diary.id);
-                    final previewText = _parseQuillContent(diary.content);
+        // 如果在选择模式下，按返回键应先退出选择模式
+        if (_isSelectionMode) {
+          setState(() {
+            _isSelectionMode = false;
+            _selectedIds.clear();
+          });
+          return;
+        }
 
-                    return DiaryCard(
-                      title: diary.title,
-                      content: previewText,
-                      date: diary.date,
-                      tags: diary.tags,
-                      mood: diary.mood,
-                      isSelected: isSelected,
-                      isSelectionMode: _isSelectionMode,
-                      onTap: () {
-                        if (_isSelectionMode) {
-                          if (diary.id != null) _toggleSelection(diary.id!);
-                        } else {
-                          // 【修复 2】从详情页返回时也刷新，确保编辑后的内容能显示
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => DiaryDetailScreen(diary: diary)
-                            ),
-                          ).then((_) {
-                            _loadDiaries(); // 无论详情页返回什么，都刷新一下列表
-                          });
-                        }
-                      },
-                      onLongPress: () {
-                        if (diary.id != null) _toggleSelection(diary.id!);
-                      },
-                    );
-                  },
-                  childCount: _filteredDiaries.length,
-                ),
-              ),
+        // 如果搜索框打开且有内容，按返回键可以先清空搜索或关闭搜索栏(可选优化)
+        if (_showSearch) {
+          setState(() {
+            _showSearch = false;
+            _searchController.clear();
+            _selectedDateRange = null;
+            _selectedTag = null;
+            _filterList();
+          });
+          return;
+        }
+
+        final now = DateTime.now();
+        // 如果是第一次按，或者距离上次按超过了 2 秒
+        if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
+          // 更新按下的时间
+          _lastPressedAt = now;
+          // 清除可能存在的旧 SnackBar，避免堆叠
+          ScaffoldMessenger.of(context).clearSnackBars();
+          // 显示提示
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('再滑一次退出 My Diary'),
+              duration: Duration(seconds: 2),
             ),
-        ],
-      ),
-      floatingActionButton: _isSelectionMode ? null : FloatingActionButton(
-        onPressed: _navigateToEdit,
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
+          );
+          return; // 此时不退出
+        }
+
+        // 如果 2 秒内再次按下，则真正退出 App
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              expandedHeight: _showSearch ? 140.0 : 60.0,
+              floating: true,
+              pinned: true,
+              elevation: 0,
+              backgroundColor: theme.scaffoldBackgroundColor,
+              iconTheme: theme.iconTheme,
+              leading: _isSelectionMode
+                  ? IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() {
+                _isSelectionMode = false;
+                _selectedIds.clear();
+              }))
+                  : null,
+              title: _isSelectionMode
+                  ? Text('已选 ${_selectedIds.length}', style: TextStyle(color: theme.textTheme.bodyLarge?.color))
+                  : Text('我的日记', style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold)),
+              centerTitle: true,
+              actions: [
+                if (_isSelectionMode)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                    onPressed: _deleteSelected,
+                  )
+                else ...[
+                  IconButton(
+                    icon: Icon(_showSearch ? Icons.search_off : Icons.search, color: theme.iconTheme.color),
+                    onPressed: () => setState(() {
+                      _showSearch = !_showSearch;
+                      if (!_showSearch) {
+                        _searchController.clear();
+                        _selectedDateRange = null;
+                        _selectedTag = null;
+                        _filterList();
+                      }
+                    }),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.bar_chart_rounded),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const StatisticsScreen())),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+                  ),
+                ]
+              ],
+              bottom: _showSearch ? PreferredSize(
+                preferredSize: const Size.fromHeight(80),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: '搜索日记...',
+                          hintStyle: TextStyle(color: theme.hintColor),
+                          prefixIcon: Icon(Icons.search, color: theme.hintColor),
+                          filled: true,
+                          fillColor: theme.cardColor,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.calendar_month,
+                                    color: _selectedDateRange != null ? AppColors.primary : theme.hintColor),
+                                onPressed: _pickDateRange,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.local_offer,
+                                    color: _selectedTag != null ? AppColors.primary : theme.hintColor),
+                                onPressed: _showTagFilterDialog,
+                              ),
+                            ],
+                          ),
+                        ),
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                      if (_selectedDateRange != null || _selectedTag != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Row(
+                            children: [
+                              if (_selectedDateRange != null)
+                                _buildFilterChip(
+                                  label: '${DateFormat('MM/dd').format(_selectedDateRange!.start)} - ${DateFormat('MM/dd').format(_selectedDateRange!.end)}',
+                                  onDeleted: () { setState(() => _selectedDateRange = null); _filterList(); },
+                                ),
+                              if (_selectedTag != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 8.0),
+                                  child: _buildFilterChip(
+                                    label: '#$_selectedTag',
+                                    onDeleted: () { setState(() => _selectedTag = null); _filterList(); },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ) : null,
+            ),
+
+            if (_isLoading)
+              const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+            else if (_filteredDiaries.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 100),
+                  child: Column(
+                    children: [
+                      Icon(Icons.inbox, size: 64, color: theme.disabledColor),
+                      const SizedBox(height: 16),
+                      Text('没有找到日记', style: TextStyle(color: theme.disabledColor)),
+                    ],
+                  ),
+                ),
+              )
+            else SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                      final diary = _filteredDiaries[index];
+                      final isSelected = _selectedIds.contains(diary.id);
+                      final previewText = _parseQuillContent(diary.content);
+
+                      return DiaryCard(
+                        title: diary.title,
+                        content: previewText,
+                        date: diary.date,
+                        tags: diary.tags,
+                        mood: diary.mood,
+                        isSelected: isSelected,
+                        isSelectionMode: _isSelectionMode,
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            if (diary.id != null) _toggleSelection(diary.id!);
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => DiaryDetailScreen(diary: diary)
+                              ),
+                            ).then((_) {
+                              _loadDiaries();
+                            });
+                          }
+                        },
+                        onLongPress: () {
+                          if (diary.id != null) _toggleSelection(diary.id!);
+                        },
+                      );
+                    },
+                    childCount: _filteredDiaries.length,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        floatingActionButton: _isSelectionMode ? null : FloatingActionButton(
+          onPressed: _navigateToEdit,
+          backgroundColor: AppColors.primary,
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }
@@ -379,7 +431,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   }
 }
 
-// DiaryCard 保持不变，可以直接使用您原来的代码，这里省略以节省空间
+// 保持 DiaryCard 组件不变
 class DiaryCard extends StatelessWidget {
   final String title;
   final String content;

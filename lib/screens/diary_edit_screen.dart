@@ -42,7 +42,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
   ];
 
   final List<IconData> _weatherIcons = [
-    Icons.wb_sunny, Icons.cloud, Icons.wb_cloudy, Icons.umbrella,
+    Icons.wb_sunny, Icons.cloud,  Icons.umbrella,
     Icons.ac_unit, Icons.thunderstorm, Icons.air,
   ];
 
