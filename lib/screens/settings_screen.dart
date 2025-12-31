@@ -156,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             context,
             children: [
               SwitchListTile(
-                title: const Text('深色模式'),
+                title: Text(AppLocalizations.of(context)!.darkMode),
                 secondary: const Icon(Icons.dark_mode_outlined),
                 value: themeProvider.isDarkMode,
                 activeColor: AppColors.primary,
