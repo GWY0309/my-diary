@@ -51,6 +51,21 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
     return (index >= 0 && index < icons.length) ? icons[index] : Icons.sentiment_neutral;
   }
 
+  IconData _getWeatherIcon(int index) {
+    // 必须与 DiaryEditScreen 中的顺序保持一致：
+    // [晴, 多云, 雨, 雪, 雷, 风]
+    const icons = [
+      Icons.wb_sunny,
+      Icons.cloud,
+      Icons.umbrella,
+      Icons.ac_unit,      // 雪
+      Icons.thunderstorm,
+      Icons.air,
+    ];
+    if (index >= 0 && index < icons.length) return icons[index];
+    return Icons.wb_sunny; // 默认晴天
+  }
+
   Color _getMoodColor(int index) {
     const colors = [
       AppColors.error,
@@ -142,7 +157,7 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
               const Spacer(),
               Icon(_getMoodIcon(_currentDiary.mood), size: 24, color: _getMoodColor(_currentDiary.mood)),
               const SizedBox(width: 8),
-              const Icon(Icons.wb_sunny, size: 24, color: AppColors.warning),
+              Icon(_getWeatherIcon(_currentDiary.weather), size: 24, color: AppColors.textSecondaryLight),
             ],
           ),
           const SizedBox(height: 16),
