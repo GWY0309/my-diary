@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // 【新增】导入 provider
-import 'package:local_auth/local_auth.dart';
+import 'package:provider/provider.dart';
+import 'package:local_auth/local_auth.dart'; // 需要 local_auth
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/colors.dart';
-import '../providers/theme_provider.dart'; // 【新增】导入主题提供者
+import '../providers/theme_provider.dart';
+import 'auth/login_screen.dart';
 import 'settings/app_lock_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
+  // 加载锁的状态
   Future<void> _loadSettings() async {
     String? bioEnabled = await _storage.read(key: 'biometric_enabled');
     String? lockEnabled = await _storage.read(key: 'app_lock_enabled');
@@ -41,18 +43,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  // 切换数字密码锁
   Future<void> _toggleAppLock(bool value) async {
     if (value) {
+      // 开启逻辑
       if (_isPinSet) {
+        // 如果已经设置过密码，直接开启
         await _storage.write(key: 'app_lock_enabled', value: 'true');
         setState(() => _isAppLockEnabled = true);
       } else {
+        // 没设过密码，去设置页面
         await _navigateToSetPin();
       }
     } else {
+      // 关闭逻辑：同时关闭生物识别
       await _storage.write(key: 'app_lock_enabled', value: 'false');
       await _storage.write(key: 'biometric_enabled', value: 'false');
-
       setState(() {
         _isAppLockEnabled = false;
         _isBiometricEnabled = false;
@@ -60,13 +66,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  // 切换生物识别
   Future<void> _toggleBiometric(bool value) async {
     if (value) {
+      // 开启前检查
       if (!_isAppLockEnabled) {
         _showSnackBar("请先开启数字密码锁");
         return;
       }
-
+      // 检查设备支持
       bool canCheck = await _auth.canCheckBiometrics;
       bool isSupported = await _auth.isDeviceSupported();
 
@@ -75,7 +83,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
     }
-
+    // 保存状态
     await _storage.write(key: 'biometric_enabled', value: value.toString());
     setState(() => _isBiometricEnabled = value);
   }
@@ -85,7 +93,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context,
       MaterialPageRoute(builder: (context) => const AppLockScreen()),
     );
+    // 返回后刷新状态（因为在那个页面可能设置成功了）
     _loadSettings();
+  }
+
+  // 处理退出登录
+  Future<void> _handleLogout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定要退出当前账号吗？\n下次进入需要重新登录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('退出', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    await _storage.delete(key: 'is_auto_login');
+
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+    );
   }
 
   void _showSnackBar(String msg) {
@@ -94,99 +135,127 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 【关键修复 1】：获取 ThemeProvider 实例
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final theme = Theme.of(context);
 
     return Scaffold(
-      // 使用主题背景色，而不是硬编码的颜色，确保切换时背景也会变
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('设置', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
-        backgroundColor: Colors.transparent,
       ),
       body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          const SizedBox(height: 16),
-          _buildSectionTitle('通用'),
+          // 1. 外观与体验
+          _buildSectionHeader(context, '外观与体验'),
+          _buildCard(
+            context,
+            children: [
+              SwitchListTile(
+                title: const Text('深色模式'),
+                secondary: const Icon(Icons.dark_mode_outlined),
+                value: themeProvider.isDarkMode,
+                activeColor: AppColors.primary,
+                onChanged: (value) => themeProvider.toggleTheme(value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
 
-          // 【关键修复 2】：连接真实的开关逻辑
-          _buildSettingsTile(
-            icon: Icons.dark_mode_outlined,
-            title: '深色模式',
-            trailing: Switch(
-              // 绑定当前是否为深色模式
-              value: themeProvider.isDarkMode,
-              // 绑定切换逻辑
-              onChanged: (value) {
-                themeProvider.toggleTheme(value);
-              },
-              activeColor: AppColors.primary,
-            ),
+          // 2. 隐私安全 (这里把两个锁分开列出)
+          _buildSectionHeader(context, '隐私安全'),
+          _buildCard(
+            context,
+            children: [
+              // 第一行：数字密码锁
+              SwitchListTile(
+                title: const Text('数字密码锁'),
+                secondary: const Icon(Icons.lock_outline),
+                value: _isAppLockEnabled,
+                activeColor: AppColors.primary,
+                onChanged: (value) => _toggleAppLock(value),
+              ),
+              // 分割线，让视觉更清晰
+              if (_isAppLockEnabled)
+                const Divider(height: 1, indent: 16, endIndent: 16),
+
+              // 第二行：生物识别解锁 (仅在开启密码锁后可用)
+              SwitchListTile(
+                title: const Text('生物识别解锁'),
+                secondary: const Icon(Icons.fingerprint),
+                subtitle: _isAppLockEnabled ? null : const Text('需先开启数字密码锁', style: TextStyle(fontSize: 12)),
+                value: _isBiometricEnabled,
+                activeColor: AppColors.primary,
+                onChanged: _isAppLockEnabled
+                    ? (value) => _toggleBiometric(value)
+                    : null, // 如果没开密码锁，禁用此开关
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // 3. 账号 (退出登录)
+          _buildSectionHeader(context, '账号'),
+          _buildCard(
+            context,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.logout, color: AppColors.error),
+                title: const Text(
+                  '退出登录',
+                  style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
+                ),
+                onTap: () => _handleLogout(context),
+              ),
+            ],
           ),
 
-          const Divider(height: 32),
-          _buildSectionTitle('安全'),
-
-          _buildSettingsTile(
-            icon: Icons.lock_outline,
-            title: '数字密码锁',
-            onTap: _isAppLockEnabled ? _navigateToSetPin : null,
-            trailing: Switch(
-              value: _isAppLockEnabled,
-              onChanged: _toggleAppLock,
-              activeColor: AppColors.primary,
+          const SizedBox(height: 40),
+          Center(
+            child: Text(
+              'My Diary v1.0.0',
+              style: TextStyle(color: theme.disabledColor, fontSize: 12),
             ),
-          ),
-
-          _buildSettingsTile(
-            icon: Icons.fingerprint,
-            title: '生物识别解锁',
-            onTap: _isAppLockEnabled ? () => _toggleBiometric(!_isBiometricEnabled) : null,
-            trailing: Switch(
-              value: _isBiometricEnabled,
-              onChanged: _isAppLockEnabled ? _toggleBiometric : null,
-              activeColor: AppColors.primary,
-            ),
-          ),
-
-          const Divider(height: 32),
-          _buildSectionTitle('关于'),
-          _buildSettingsTile(
-            icon: Icons.info_outline,
-            title: '软件版本',
-            trailing: const Text('v1.0.0', style: TextStyle(color: Colors.grey)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionHeader(BuildContext context, String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Text(title, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 14)),
+      padding: const EdgeInsets.only(left: 8, bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: Theme.of(context).primaryColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+      ),
     );
   }
 
-  Widget _buildSettingsTile({
-    required IconData icon,
-    required String title,
-    Widget? trailing,
-    VoidCallback? onTap
-  }) {
-    // 获取当前主题的卡片颜色，确保在深色模式下列表项背景正确
-    // 如果没有特别定义卡片颜色，可以使用 Theme.of(context).cardColor
-    final tileColor = Theme.of(context).cardColor;
-
-    return ListTile(
-      leading: Icon(icon, color: AppColors.textPrimaryLight), // 注意：这里的颜色可能也需要根据主题适配，后续可以优化
-      title: Text(title, style: const TextStyle(fontSize: 15)),
-      trailing: trailing ?? const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-      onTap: onTap,
-      tileColor: tileColor, // 使用动态颜色
-      enabled: onTap != null || trailing is Switch,
+  Widget _buildCard(BuildContext context, {required List<Widget> children}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          if (Theme.of(context).brightness == Brightness.light)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+        ],
+      ),
+      child: Column(
+        children: children,
+      ),
     );
   }
 }

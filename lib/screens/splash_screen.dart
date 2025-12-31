@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // 【新增】
 import '../constants/colors.dart';
 import 'auth/login_screen.dart';
+import 'diary_list_screen.dart'; // 【新增】导入日记列表页
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -10,22 +12,44 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  //实例化存储对象
+  final _storage = const FlutterSecureStorage();
+
   @override
   void initState() {
     super.initState();
-    _navigateToNext();
+    _checkLoginStatus();
   }
 
-  // 模拟初始化过程
-  void _navigateToNext() async {
-    await Future.delayed(const Duration(seconds: 3)); // 展示 3 秒启动动画
+  //检查登录状态并跳转
+  Future<void> _checkLoginStatus() async {
+    // 1. 保持启动图展示至少 2 秒（避免闪退太快用户看不清）
+    // 注意：读取存储是异步的，通常很快，所以我们用 Future.wait 来确保最少展示时间
+    await Future.wait([
+      Future.delayed(const Duration(seconds: 2)), // 动画时间
+      _processAutoLogin(), // 读取存储
+    ]);
+  }
+
+  Future<void> _processAutoLogin() async {
+    // 读取自动登录标记
+    String? isAutoLogin = await _storage.read(key: 'is_auto_login');
+
     if (!mounted) return;
 
-    // TODO: 这里以后可以加入逻辑：如果用户已登录，直接跳到 DiaryListScreen
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-    );
+    if (isAutoLogin == 'true') {
+      // 🟢 情况 A：开启了自动登录 -> 跳到首页
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DiaryListScreen()),
+      );
+    } else {
+      // 🔴 情况 B：没开启或第一次用 -> 跳到登录页
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
   }
 
   @override
@@ -34,7 +58,6 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Container(
         width: double.infinity,
         decoration: const BoxDecoration(
-          // 使用主色渐变背景
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -44,10 +67,8 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 应用图标
             const Icon(Icons.book_rounded, size: 100, color: Colors.white),
             const SizedBox(height: 24),
-            // 应用名称：标题1样式
             const Text(
               'My Diary',
               style: TextStyle(
@@ -58,7 +79,6 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
             const SizedBox(height: 48),
-            // 加载指示器
             const CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
             ),

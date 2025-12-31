@@ -66,6 +66,23 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
     return Icons.wb_sunny; // 默认晴天
   }
 
+  Color _getWeatherColor(int index) {
+    // 对应顺序：[晴, 多云, 雨, 雪, 雷, 风]
+    const colors = [
+      Colors.orange,       // 晴 - 橙色
+      Colors.blueGrey,     // 多云 - 蓝灰色
+      Colors.blue,         // 雨 - 蓝色
+      Colors.cyan,         // 雪 - 青色
+      Colors.deepPurple,   // 雷 - 深紫色
+      Colors.teal,         // 风 - 蓝绿色
+    ];
+
+    if (index >= 0 && index < colors.length) {
+      return colors[index];
+    }
+    return Colors.grey; // 默认颜色
+  }
+
   Color _getMoodColor(int index) {
     const colors = [
       AppColors.error,
@@ -157,7 +174,11 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
               const Spacer(),
               Icon(_getMoodIcon(_currentDiary.mood), size: 24, color: _getMoodColor(_currentDiary.mood)),
               const SizedBox(width: 8),
-              Icon(_getWeatherIcon(_currentDiary.weather), size: 24, color: AppColors.textSecondaryLight),
+              Icon(
+                _getWeatherIcon(_currentDiary.weather),
+                size: 24,
+                color: _getWeatherColor(_currentDiary.weather),
+              ),
             ],
           ),
           const SizedBox(height: 16),
