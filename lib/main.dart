@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // 需要在 pubspec.yaml 添加 provider 依赖
+import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'providers/theme_provider.dart'; // 导入我们创建的主题 Provider
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
+import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/app_lock_verify_screen.dart';
 
@@ -74,7 +76,10 @@ class _MyDiaryAppState extends State<MyDiaryApp> with WidgetsBindingObserver {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
-      title: 'My Diary',
+      // 【修改】使用 onGenerateTitle 替代 title，支持多语言应用名
+      // 注意：AppLocalizations.of(context) 可能为 null，所以加了 !
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+
       debugShowCheckedModeBanner: false,
 
       // 3. 绑定动态主题模式 (跟随系统、强制浅色、强制深色)
@@ -116,6 +121,18 @@ class _MyDiaryAppState extends State<MyDiaryApp> with WidgetsBindingObserver {
           elevation: 0,
         ),
       ),
+
+      // 【新增】国际化配置
+      localizationsDelegates: const [
+        AppLocalizations.delegate, // 我们生成的翻译代理
+        GlobalMaterialLocalizations.delegate, // Material 组件库翻译 (日期选择器等)
+        GlobalWidgetsLocalizations.delegate, // 文字方向
+        GlobalCupertinoLocalizations.delegate, // iOS 风格组件翻译
+      ],
+      supportedLocales: const [
+        Locale('en'), // 英文
+        Locale('zh'), // 中文
+      ],
 
       home: const SplashScreen(),
 

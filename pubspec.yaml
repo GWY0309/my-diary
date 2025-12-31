@@ -11,6 +11,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # 【新增】国际化支持库
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
   # 状态管理
   flutter_bloc: ^8.1.0
   provider: ^6.0.0
@@ -50,7 +55,8 @@ dev_dependencies:
 # 注意：这个 flutter 标签也是顶层属性
 flutter:
   uses-material-design: true # 启用 Material Design 3 规范
-
+  # 开启代码生成，这会自动生成翻译相关的 Dart 代码
+  generate: true
   # 如果后续有图片资源或字体，写在这里
   # assets:
   #   - assets/images/

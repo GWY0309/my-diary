@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart'; // 需要 local_auth
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/colors.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/theme_provider.dart';
 import 'auth/login_screen.dart';
 import 'settings/app_lock_screen.dart';
@@ -102,7 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('退出登录'),
+        title: Text(AppLocalizations.of(context)!.logout),
         content: const Text('确定要退出当前账号吗？\n下次进入需要重新登录。'),
         actions: [
           TextButton(
@@ -141,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('设置', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(AppLocalizations.of(context)!.settings),
         centerTitle: true,
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,

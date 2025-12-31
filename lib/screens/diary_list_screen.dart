@@ -10,6 +10,7 @@ import 'diary_edit_screen.dart';
 import 'settings_screen.dart';
 import 'diary_detail_screen.dart';
 import 'statistics_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class DiaryListScreen extends StatefulWidget {
   const DiaryListScreen({super.key});
@@ -262,7 +263,7 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
                   : null,
               title: _isSelectionMode
                   ? Text('已选 ${_selectedIds.length}', style: TextStyle(color: theme.textTheme.bodyLarge?.color))
-                  : Text('我的日记', style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold)),
+                  : Text(AppLocalizations.of(context)!.appTitle, style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),),
               centerTitle: true,
               actions: [
                 if (_isSelectionMode)
