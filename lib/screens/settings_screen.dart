@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:local_auth/local_auth.dart'; // 需要 local_auth
+import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/colors.dart';
 import '../l10n/app_localizations.dart';
@@ -29,7 +29,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
-  // 加载锁的状态
   Future<void> _loadSettings() async {
     String? bioEnabled = await _storage.read(key: 'biometric_enabled');
     String? lockEnabled = await _storage.read(key: 'app_lock_enabled');
@@ -44,20 +43,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // 切换数字密码锁
   Future<void> _toggleAppLock(bool value) async {
     if (value) {
-      // 开启逻辑
       if (_isPinSet) {
-        // 如果已经设置过密码，直接开启
         await _storage.write(key: 'app_lock_enabled', value: 'true');
         setState(() => _isAppLockEnabled = true);
       } else {
-        // 没设过密码，去设置页面
         await _navigateToSetPin();
       }
     } else {
-      // 关闭逻辑：同时关闭生物识别
       await _storage.write(key: 'app_lock_enabled', value: 'false');
       await _storage.write(key: 'biometric_enabled', value: 'false');
       setState(() {
@@ -67,24 +61,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // 切换生物识别
   Future<void> _toggleBiometric(bool value) async {
+    final l10n = AppLocalizations.of(context)!;
     if (value) {
-      // 开启前检查
       if (!_isAppLockEnabled) {
-        _showSnackBar("请先开启数字密码锁");
+        // 【修改】使用翻译
+        _showSnackBar(l10n.pleaseEnablePinFirst);
         return;
       }
-      // 检查设备支持
       bool canCheck = await _auth.canCheckBiometrics;
       bool isSupported = await _auth.isDeviceSupported();
 
       if (!canCheck || !isSupported) {
-        _showSnackBar("您的设备不支持或未开启生物识别");
+        // 【修改】使用翻译
+        _showSnackBar(l10n.biometricNotSupported);
         return;
       }
     }
-    // 保存状态
     await _storage.write(key: 'biometric_enabled', value: value.toString());
     setState(() => _isBiometricEnabled = value);
   }
@@ -94,25 +87,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context,
       MaterialPageRoute(builder: (context) => const AppLockScreen()),
     );
-    // 返回后刷新状态（因为在那个页面可能设置成功了）
     _loadSettings();
   }
 
-  // 处理退出登录
   Future<void> _handleLogout(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.logout),
-        content: const Text('确定要退出当前账号吗？\n下次进入需要重新登录。'),
+        // 【修改】翻译标题和内容
+        title: Text(l10n.logout),
+        content: Text(l10n.logoutConfirmation),
         actions: [
           TextButton(
+            // 【修改】翻译按钮
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
+            // 【修改】翻译按钮
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('退出', style: TextStyle(color: AppColors.error)),
+            child: Text(l10n.confirmLogout, style: const TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -138,11 +133,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.settings),
+        title: Text(l10n.settings),
         centerTitle: true,
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
@@ -150,13 +146,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1. 外观与体验
-          _buildSectionHeader(context, '外观与体验'),
+          // 【修改】分组标题翻译
+          _buildSectionHeader(context, l10n.appearanceAndExperience),
           _buildCard(
             context,
             children: [
               SwitchListTile(
-                title: Text(AppLocalizations.of(context)!.darkMode),
+                title: Text(l10n.darkMode),
                 secondary: const Icon(Icons.dark_mode_outlined),
                 value: themeProvider.isDarkMode,
                 activeColor: AppColors.primary,
@@ -166,48 +162,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
 
-          // 2. 隐私安全 (这里把两个锁分开列出)
-          _buildSectionHeader(context, '隐私安全'),
+          // 【修改】分组标题翻译
+          _buildSectionHeader(context, l10n.privacyAndSecurity),
           _buildCard(
             context,
             children: [
-              // 第一行：数字密码锁
               SwitchListTile(
-                title: const Text('数字密码锁'),
+                // 【修改】标题翻译
+                title: Text(l10n.pinLock),
                 secondary: const Icon(Icons.lock_outline),
                 value: _isAppLockEnabled,
                 activeColor: AppColors.primary,
                 onChanged: (value) => _toggleAppLock(value),
               ),
-              // 分割线，让视觉更清晰
               if (_isAppLockEnabled)
                 const Divider(height: 1, indent: 16, endIndent: 16),
 
-              // 第二行：生物识别解锁 (仅在开启密码锁后可用)
               SwitchListTile(
-                title: const Text('生物识别解锁'),
+                // 【修改】标题翻译
+                title: Text(l10n.biometricUnlock),
                 secondary: const Icon(Icons.fingerprint),
-                subtitle: _isAppLockEnabled ? null : const Text('需先开启数字密码锁', style: TextStyle(fontSize: 12)),
+                // 【修改】副标题翻译
+                subtitle: _isAppLockEnabled ? null : Text(l10n.enablePinFirst, style: const TextStyle(fontSize: 12)),
                 value: _isBiometricEnabled,
                 activeColor: AppColors.primary,
                 onChanged: _isAppLockEnabled
                     ? (value) => _toggleBiometric(value)
-                    : null, // 如果没开密码锁，禁用此开关
+                    : null,
               ),
             ],
           ),
           const SizedBox(height: 24),
 
-          // 3. 账号 (退出登录)
-          _buildSectionHeader(context, '账号'),
+          // 【修改】分组标题翻译
+          _buildSectionHeader(context, l10n.account),
           _buildCard(
             context,
             children: [
               ListTile(
                 leading: const Icon(Icons.logout, color: AppColors.error),
-                title: const Text(
-                  '退出登录',
-                  style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
+                // 【修改】标题翻译
+                title: Text(
+                  l10n.logout,
+                  style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
                 ),
                 onTap: () => _handleLogout(context),
               ),

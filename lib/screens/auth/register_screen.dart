@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../constants/colors.dart';
-import '../diary_list_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../constants/colors.dart';
+import '../../l10n/app_localizations.dart'; // 导入
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -13,45 +14,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-
   bool _isPasswordVisible = false;
-  bool _isConfirmPasswordVisible = false;
+  bool _isLoading = false;
 
-  void _handleRegister() {
-    // 根据 PRD US-001 的验收标准
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-    final confirmPassword = _confirmPasswordController.text;
+  Future<void> _handleRegister() async {
+    final l10n = AppLocalizations.of(context)!;
 
-    if (email.isEmpty || password.isEmpty) {
-      _showSnackBar('请填写所有必填项');
+    // 基础验证
+    if (_passwordController.text != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.passwordsDoNotMatch)),
+      );
       return;
     }
 
-    if (password != confirmPassword) {
-      _showSnackBar('两次输入的密码不一致');
-      return;
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.registerSuccess)),
+        );
+        Navigator.pop(context); // 注册成功返回登录页
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        // 使用带参数的翻译
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.registerFailed(e.message ?? 'Unknown error'))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-
-    if (password.length < 8) { // 满足 PRD 6.2.1 的密码安全要求
-      _showSnackBar('密码长度至少需要8位');
-      return;
-    }
-
-    // 模拟注册成功并自动登录
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const DiaryListScreen()),
-          (route) => false,
-    );
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       appBar: AppBar(
@@ -67,22 +73,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             children: [
-              const Icon(Icons.person_add_rounded, size: 70, color: AppColors.primary),
-              const SizedBox(height: 16),
-              const Text(
-                '创建新账号',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimaryLight),
+              const SizedBox(height: 20),
+              Text(
+                l10n.registerTitle, // 翻译
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimaryLight),
               ),
-              const SizedBox(height: 8),
-              const Text('开始记录你的私人故事', style: TextStyle(color: AppColors.textSecondaryLight)),
-              const SizedBox(height: 40),
+              const SizedBox(height: 48),
 
-              // 邮箱输入
               TextField(
                 controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  labelText: '邮箱地址',
+                  labelText: l10n.emailLabel, // 复用 Login 页的 key
                   prefixIcon: const Icon(Icons.email_outlined),
                   filled: true,
                   fillColor: AppColors.surfaceLight,
@@ -90,13 +91,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // 密码输入
               TextField(
                 controller: _passwordController,
                 obscureText: !_isPasswordVisible,
                 decoration: InputDecoration(
-                  labelText: '密码',
+                  labelText: l10n.passwordLabel, // 复用 Login 页的 key
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off),
@@ -108,49 +107,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // 确认密码
+              // 确认密码框
               TextField(
                 controller: _confirmPasswordController,
-                obscureText: !_isConfirmPasswordVisible,
+                obscureText: !_isPasswordVisible,
                 decoration: InputDecoration(
-                  labelText: '确认密码',
+                  labelText: l10n.confirmPasswordLabel, // 翻译
                   prefixIcon: const Icon(Icons.lock_reset_outlined),
-                  suffixIcon: IconButton(
-                    icon: Icon(_isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off),
-                    onPressed: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible),
-                  ),
                   filled: true,
                   fillColor: AppColors.surfaceLight,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
               ),
+
               const SizedBox(height: 32),
 
-              // 注册按钮
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _handleRegister,
+                  onPressed: _isLoading ? null : _handleRegister,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('立即注册', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(l10n.registerNow, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
-              ),
-
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('已有账号？'),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('返回登录', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                  ),
-                ],
               ),
             ],
           ),

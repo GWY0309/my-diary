@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io'; // 记得导入 dart:io 用于显示本地图片
+import 'dart:io'; // ✅ 必须保留，用于显示本地图片
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +7,7 @@ import '../constants/colors.dart';
 import '../models/diary_model.dart';
 import '../services/database_helper.dart';
 import 'diary_edit_screen.dart';
+import '../../l10n/app_localizations.dart'; // ✅ 引入国际化
 
 class DiaryDetailScreen extends StatefulWidget {
   final DiaryEntry diary;
@@ -40,6 +41,7 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
     }
   }
 
+  // 获取心情图标
   IconData _getMoodIcon(int index) {
     const icons = [
       Icons.sentiment_very_dissatisfied,
@@ -48,41 +50,11 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
       Icons.sentiment_satisfied,
       Icons.sentiment_very_satisfied,
     ];
-    return (index >= 0 && index < icons.length) ? icons[index] : Icons.sentiment_neutral;
-  }
-
-  IconData _getWeatherIcon(int index) {
-    // 必须与 DiaryEditScreen 中的顺序保持一致：
-    // [晴, 多云, 雨, 雪, 雷, 风]
-    const icons = [
-      Icons.wb_sunny,
-      Icons.cloud,
-      Icons.umbrella,
-      Icons.ac_unit,      // 雪
-      Icons.thunderstorm,
-      Icons.air,
-    ];
     if (index >= 0 && index < icons.length) return icons[index];
-    return Icons.wb_sunny; // 默认晴天
+    return Icons.sentiment_neutral;
   }
 
-  Color _getWeatherColor(int index) {
-    // 对应顺序：[晴, 多云, 雨, 雪, 雷, 风]
-    const colors = [
-      Colors.orange,       // 晴 - 橙色
-      Colors.blueGrey,     // 多云 - 蓝灰色
-      Colors.blue,         // 雨 - 蓝色
-      Colors.cyan,         // 雪 - 青色
-      Colors.deepPurple,   // 雷 - 深紫色
-      Colors.teal,         // 风 - 蓝绿色
-    ];
-
-    if (index >= 0 && index < colors.length) {
-      return colors[index];
-    }
-    return Colors.grey; // 默认颜色
-  }
-
+  // 获取心情颜色
   Color _getMoodColor(int index) {
     const colors = [
       AppColors.error,
@@ -91,171 +63,207 @@ class _DiaryDetailScreenState extends State<DiaryDetailScreen> {
       AppColors.success,
       AppColors.primary,
     ];
-    return (index >= 0 && index < colors.length) ? colors[index] : Colors.grey;
+    if (index >= 0 && index < colors.length) return colors[index];
+    return Colors.grey;
   }
 
-  void _confirmDelete() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除日记'),
-        content: const Text('确定要删除这篇日记吗？此操作不可撤销。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          TextButton(
-            onPressed: () async {
-              if (_currentDiary.id != null) {
-                await DatabaseHelper.instance.deleteDiary(_currentDiary.id!);
-                if (mounted) {
-                  Navigator.pop(context);
-                  Navigator.pop(context, true);
-                }
-              }
-            },
-            child: const Text('删除', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
+  // 获取天气图标 (如果需要展示)
+  IconData _getWeatherIcon(int index) {
+    const icons = [
+      Icons.wb_sunny, Icons.cloud, Icons.umbrella,
+      Icons.ac_unit, Icons.thunderstorm, Icons.air,
+    ];
+    if (index >= 0 && index < icons.length) return icons[index];
+    return Icons.wb_sunny;
+  }
+
+  Future<void> _deleteDiary() async {
+    await DatabaseHelper.instance.deleteDiary(_currentDiary.id!);
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _editDiary() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => DiaryEditScreen(diary: _currentDiary)),
     );
+    // 如果编辑页返回了新的日记对象（或者返回 true），则刷新页面
+    if (result != null && result is DiaryEntry) {
+      setState(() {
+        _currentDiary = result;
+        _loadContent(); // 重新加载 Quill 内容
+      });
+    } else if (result == true) {
+      // 如果只返回 true，建议重新查库或者简单 pop
+      Navigator.pop(context);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final secondaryColor = isDark ? Colors.white70 : AppColors.textSecondaryLight;
+    final l10n = AppLocalizations.of(context)!; // ✅ 获取翻译代理
+
+    // 1. 动态日期格式
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final dateStr = isZh
+        ? DateFormat('MM月dd日').format(_currentDiary.date)
+        : DateFormat('MMM dd').format(_currentDiary.date);
+
+    final yearStr = DateFormat('yyyy').format(_currentDiary.date);
+    final weekDayStr = isZh
+        ? DateFormat('EEEE', 'zh_CN').format(_currentDiary.date)
+        : DateFormat('EEEE').format(_currentDiary.date);
+
+    // 2. 动态标签翻译 helper
+    String getLocalizedTag(String tag) {
+      if (tag == 'Life' || tag == '生活') return l10n.tagLife;
+      if (tag == 'Work' || tag == '工作') return l10n.tagWork;
+      if (tag == 'Travel' || tag == '旅行') return l10n.tagTravel;
+      if (tag == 'Mood' || tag == '心情') return l10n.tagMood;
+      if (tag == 'Food' || tag == '美食') return l10n.tagFood;
+      if (tag == 'Study' || tag == '学习') return l10n.tagStudy;
+      return tag;
+    }
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
+        // ✅ 标题翻译
+        title: Text(l10n.diaryDetailTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         iconTheme: theme.iconTheme,
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_outlined),
-            onPressed: () async {
-              final updatedDiary = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => DiaryEditScreen(diary: _currentDiary),
-                ),
-              );
-
-              if (updatedDiary != null && updatedDiary is DiaryEntry) {
-                setState(() {
-                  _currentDiary = updatedDiary;
-                  _loadContent();
-                });
-              }
-            },
+            onPressed: _editDiary,
+            tooltip: l10n.editAction, // 提示文案也可以翻译
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
-            onPressed: _confirmDelete,
+            onPressed: _deleteDiary,
+            tooltip: l10n.deleteAction,
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(
-            _currentDiary.title,
-            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 顶部日期和心情/天气栏
+            Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(dateStr, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                        const SizedBox(width: 8),
+                        Text(yearStr, style: TextStyle(fontSize: 16, color: theme.disabledColor, height: 1.5)),
+                      ],
+                    ),
+                    Text(weekDayStr, style: TextStyle(fontSize: 14, color: theme.primaryColor)),
+                  ],
+                ),
+                const Spacer(),
+                // 心情图标
+                Icon(_getMoodIcon(_currentDiary.mood), color: _getMoodColor(_currentDiary.mood), size: 32),
+                const SizedBox(width: 16),
+                // 天气图标
+                Icon(_getWeatherIcon(_currentDiary.weather), color: theme.iconTheme.color, size: 28),
+              ],
+            ),
+            const SizedBox(height: 24),
 
-          Row(
-            children: [
-              Text(
-                DateFormat('yyyy年MM月dd日 HH:mm').format(_currentDiary.date),
-                style: TextStyle(color: secondaryColor),
-              ),
-              const Spacer(),
-              Icon(_getMoodIcon(_currentDiary.mood), size: 24, color: _getMoodColor(_currentDiary.mood)),
-              const SizedBox(width: 8),
-              Icon(
-                _getWeatherIcon(_currentDiary.weather),
-                size: 24,
-                color: _getWeatherColor(_currentDiary.weather),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+            // 标题
+            Text(
+              _currentDiary.title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
 
-          if (_currentDiary.tags.isNotEmpty)
+            // ✅ 图片展示区 (恢复您旧版的功能)
+            if (_currentDiary.images.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SizedBox(
+                  height: 120,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _currentDiary.images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final path = _currentDiary.images[index];
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          File(path),
+                          height: 120,
+                          width: 120,
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, stack) => Container(
+                            width: 120, height: 120,
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+            // 标签栏
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: _currentDiary.tags.map((tag) => DetailTagChip(
-                label: tag,
+                label: getLocalizedTag(tag), // ✅ 标签翻译
                 color: AppColors.primary,
               )).toList(),
             ),
+            const SizedBox(height: 24),
 
-          // 【新增】图片展示区域
-          if (_currentDiary.images.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: SizedBox(
-                height: 120,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _currentDiary.images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        File(_currentDiary.images[index]), // 显示本地图片
-                        width: 120,
-                        height: 120,
-                        fit: BoxFit.cover,
-                        errorBuilder: (ctx, err, stack) => Container(
-                            width: 120, height: 120, color: Colors.grey,
-                            child: const Icon(Icons.error)
-                        ),
+            // 内容编辑器 (只读)
+            QuillEditor.basic(
+              configurations: QuillEditorConfigurations(
+                controller: _controller,
+                readOnly: true,
+                showCursor: false,
+                enableInteractiveSelection: true,
+                padding: EdgeInsets.zero,
+                sharedConfigurations: const QuillSharedConfigurations(
+                  locale: Locale('zh', 'CN'), // 这里也可以根据 context 动态设置
+                ),
+                // 自定义样式保持不变
+                customStyles: DefaultStyles(
+                  paragraph: DefaultTextBlockStyle(
+                      TextStyle(
+                        fontSize: 16,
+                        height: 1.6,
+                        color: isDark ? Colors.white : const Color(0xFF202124),
                       ),
-                    );
-                  },
+                      const VerticalSpacing(0, 0),
+                      const VerticalSpacing(0, 0),
+                      null
+                  ),
                 ),
               ),
             ),
-
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Divider(),
-          ),
-
-          QuillEditor.basic(
-            configurations: QuillEditorConfigurations(
-              controller: _controller,
-              readOnly: true,
-              showCursor: false,
-              enableInteractiveSelection: true,
-              padding: EdgeInsets.zero,
-              sharedConfigurations: const QuillSharedConfigurations(
-                locale: Locale('zh', 'CN'),
-              ),
-              customStyles: DefaultStyles(
-                paragraph: DefaultTextBlockStyle(
-                    TextStyle(
-                      fontSize: 16,
-                      height: 1.6,
-                      color: isDark ? Colors.white : const Color(0xFF202124),
-                    ),
-                    const VerticalSpacing(0, 0),
-                    const VerticalSpacing(0, 0),
-                    null
-                ),
-              ),
-            ),
-          ),
-        ],
+            const SizedBox(height: 40),
+          ],
+        ),
       ),
     );
   }
 }
 
+// 标签小组件
 class DetailTagChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -266,10 +274,10 @@ class DetailTagChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        border: Border.all(color: color.withOpacity(0.5)),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 12)),
+      child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
     );
   }
 }
