@@ -170,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _getLanguageName(localeProvider.locale?.languageCode),
+                          _getLanguageName(localeProvider.locale),
                           style: TextStyle(color: theme.disabledColor, fontSize: 14),
                         ),
                         const SizedBox(width: 4),
@@ -281,15 +281,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // 辅助方法 1：获取语言显示的名称
-  String _getLanguageName(String? code) {
-    switch (code) {
+  String _getLanguageName(Locale? locale) {
+    if (locale == null) return 'System';
+
+    // 特殊处理繁体中文
+    if (locale.languageCode == 'zh') {
+      if (locale.scriptCode == 'Hant') return '繁體中文';
+      return '简体中文';
+    }
+
+    switch (locale.languageCode) {
       case 'en': return 'English';
-      case 'zh': return '中文';
       case 'ja': return '日本語';
       case 'ko': return '한국어';
       case 'es': return 'Español';
       case 'fr': return 'Français';
-      default: return 'System'; // 跟随系统
+      case 'de': return 'Deutsch';
+      case 'fil': return 'Filipino';
+      case 'it': return 'Italiano';
+      case 'pt': return 'Português';
+      case 'ru': return 'Русский';
+      case 'sv': return 'Svenska';
+      case 'tr': return 'Türkçe';
+      case 'nl': return 'Nederlands';
+      case 'pl': return 'Polski';
+      case 'ro': return 'Română';
+      case 'id': return 'Bahasa Indonesia';
+      case 'ms': return 'Bahasa Melayu';
+      case 'th': return 'ไทย';
+      case 'vi': return 'Tiếng Việt';
+      case 'ar': return 'العربية';
+      case 'fa': return 'فارسی';
+      case 'hi': return 'हिन्दी';
+      default: return locale.languageCode;
     }
   }
 
@@ -299,42 +323,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true, // 允许弹窗高度自适应
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(l10n.selectLanguage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-              _buildLanguageItem(context, provider, 'English', 'en'),
-              _buildLanguageItem(context, provider, '简体中文', 'zh'),
-              _buildLanguageItem(context, provider, '日本語', 'ja'),
-              _buildLanguageItem(context, provider, '한국어', 'ko'),
-              _buildLanguageItem(context, provider, 'Español', 'es'),
-              _buildLanguageItem(context, provider, 'Français', 'fr'),
-              const SizedBox(height: 16),
-            ],
-          ),
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7, // 初始高度 70%
+          minChildSize: 0.5,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, controller) {
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                Text(l10n.selectLanguage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView(
+                    controller: controller,
+                    children: [
+                      _buildLanguageItem(context, provider, 'English', const Locale('en')),
+                      _buildLanguageItem(context, provider, '简体中文', const Locale('zh')),
+                      _buildLanguageItem(context, provider, '繁體中文', const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant')),
+                      _buildLanguageItem(context, provider, '日本語', const Locale('ja')),
+                      _buildLanguageItem(context, provider, '한국어', const Locale('ko')),
+                      _buildLanguageItem(context, provider, 'Español', const Locale('es')),
+                      _buildLanguageItem(context, provider, 'Français', const Locale('fr')),
+                      _buildLanguageItem(context, provider, 'Deutsch', const Locale('de')),
+                      _buildLanguageItem(context, provider, 'Filipino', const Locale('fil')),
+                      _buildLanguageItem(context, provider, 'Italiano', const Locale('it')),
+                      _buildLanguageItem(context, provider, 'Português', const Locale('pt')),
+                      _buildLanguageItem(context, provider, 'Русский', const Locale('ru')),
+                      _buildLanguageItem(context, provider, 'Svenska', const Locale('sv')),
+                      _buildLanguageItem(context, provider, 'Türkçe', const Locale('tr')),
+                      _buildLanguageItem(context, provider, 'Nederlands', const Locale('nl')),
+                      _buildLanguageItem(context, provider, 'Polski', const Locale('pl')),
+                      _buildLanguageItem(context, provider, 'Română', const Locale('ro')),
+                      _buildLanguageItem(context, provider, 'Bahasa Indonesia', const Locale('id')), // 注意这里印尼语代码通常是 id
+                      _buildLanguageItem(context, provider, 'Bahasa Melayu', const Locale('ms')),
+                      _buildLanguageItem(context, provider, 'ไทย', const Locale('th')),
+                      _buildLanguageItem(context, provider, 'Tiếng Việt', const Locale('vi')),
+                      _buildLanguageItem(context, provider, 'العربية', const Locale('ar')),
+                      _buildLanguageItem(context, provider, 'فارسی', const Locale('fa')),
+                      _buildLanguageItem(context, provider, 'हिन्दी', const Locale('hi')),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildLanguageItem(BuildContext context, LocaleProvider provider, String name, String code) {
-    final isSelected = provider.locale?.languageCode == code;
+  Widget _buildLanguageItem(BuildContext context, LocaleProvider provider, String name, Locale locale) {
+    // 判断选中状态：繁体中文需要特别判断 scriptCode
+    bool isSelected = false;
+    if (provider.locale == null) {
+      isSelected = false;
+    } else if (locale.languageCode == 'zh') {
+      isSelected = provider.locale!.languageCode == 'zh' && provider.locale!.scriptCode == locale.scriptCode;
+    } else {
+      isSelected = provider.locale!.languageCode == locale.languageCode;
+    }
+
     return ListTile(
       title: Text(name, textAlign: TextAlign.center,
           style: TextStyle(
-              color: isSelected ? AppColors.primary : null,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+            color: isSelected ? AppColors.primary : null,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 16,
           )),
       onTap: () {
-        provider.setLocale(Locale(code));
+        provider.setLocale(locale);
         Navigator.pop(context);
       },
     );
