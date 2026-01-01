@@ -79,5 +79,8 @@
   "weatherRainy": "雨天",
   "weatherSnowy": "雪天",
   "weatherThunder": "雷雨",
-  "weatherWindy": "大风"
+  "weatherWindy": "大风",
+
+  "language": "语言",
+  "selectLanguage": "选择语言"
 }

@@ -228,4 +228,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get weatherWindy => '大风';
+
+  @override
+  String get language => '语言';
+
+  @override
+  String get selectLanguage => '选择语言';
 }

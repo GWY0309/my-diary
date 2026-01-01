@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
+// 引入项目文件
+import 'constants/colors.dart'; // 确保引入了 AppColors
 import 'l10n/app_localizations.dart';
 import 'providers/theme_provider.dart';
+import 'providers/locale_provider.dart'; // ✅ 1. 引入 LocaleProvider
 import 'screens/splash_screen.dart';
 import 'screens/auth/app_lock_verify_screen.dart';
 
 void main() async {
-  // 确保 Flutter 绑定初始化，因为后面有异步操作
   WidgetsFlutterBinding.ensureInitialized();
 
   runApp(
-    // 1. 在顶层注入 ThemeProvider，让整个 App 都能访问主题状态
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider()..loadTheme(), // 启动时自动加载保存的主题
+    // ✅ 2. 使用 MultiProvider，同时注入 ThemeProvider 和 LocaleProvider
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..loadTheme()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()), // 注入语言管理
+      ],
       child: const MyDiaryApp(),
     ),
   );
@@ -34,8 +40,7 @@ class _MyDiaryAppState extends State<MyDiaryApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 注册生命周期监听
-    _checkInitialLock(); // 启动时检查锁状态
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -44,111 +49,69 @@ class _MyDiaryAppState extends State<MyDiaryApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // 监听应用生命周期变化（后台/前台切换）
+  // 监听应用生命周期（切后台自动锁屏逻辑）
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 当 App 进入后台（暂停）时，标记为需要锁定
-    // 这样当用户切回来时，builder 中的逻辑会重新渲染并显示锁屏
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.paused) {
-      _lockApp();
-    }
-  }
-
-  // 启动时检查配置
-  Future<void> _checkInitialLock() async {
-    String? enabled = await _storage.read(key: 'app_lock_enabled');
-    if (enabled == 'true') {
-      setState(() => _isLocked = true);
-    }
-  }
-
-  // 切后台时锁定
-  Future<void> _lockApp() async {
-    String? enabled = await _storage.read(key: 'app_lock_enabled');
-    if (enabled == 'true') {
-      setState(() => _isLocked = true);
+      String? lockEnabled = await _storage.read(key: 'app_lock_enabled');
+      if (lockEnabled == 'true') {
+        setState(() {
+          _isLocked = true;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 2. 获取当前的主题状态
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    // ✅ 3. 改为 Consumer2，同时监听 ThemeProvider 和 LocaleProvider
+    return Consumer2<ThemeProvider, LocaleProvider>(
+      builder: (context, themeProvider, localeProvider, child) {
+        return MaterialApp(
+          title: 'My Diary',
+          debugShowCheckedModeBanner: false,
 
-    return MaterialApp(
-      // 【修改】使用 onGenerateTitle 替代 title，支持多语言应用名
-      // 注意：AppLocalizations.of(context) 可能为 null，所以加了 !
-      onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+          // 主题配置
+          theme: AppColors.lightTheme,
+          darkTheme: AppColors.darkTheme,
+          themeMode: themeProvider.themeMode,
 
-      debugShowCheckedModeBanner: false,
+          // ✅ 4. 核心：将 App 语言绑定到 Provider 的状态
+          // 当 localeProvider.locale 改变时，App 会立即切换语言
+          locale: localeProvider.locale,
 
-      // 3. 绑定动态主题模式 (跟随系统、强制浅色、强制深色)
-      themeMode: themeProvider.themeMode,
-
-      // 定义日间模式主题 (参考 UI 文档)
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF3F4F6), // AppColors.backgroundLight
-        primaryColor: const Color(0xFF6366F1), // AppColors.primary
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
-          brightness: Brightness.light,
-          surface: Colors.white, // 卡片背景
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF3F4F6),
-          foregroundColor: Color(0xFF1F2937), // 黑色文字
-          elevation: 0,
-        ),
-      ),
-
-      // 定义夜间模式主题 (参考 UI 文档)
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF111827), // 夜间背景
-        primaryColor: const Color(0xFF818CF8), // 夜间主色
-        cardColor: const Color(0xFF1F2937), // 夜间卡片色
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF818CF8),
-          brightness: Brightness.dark,
-          surface: const Color(0xFF1F2937),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF111827),
-          foregroundColor: Color(0xFFF9FAFB), // 白色文字
-          elevation: 0,
-        ),
-      ),
-
-      // 【新增】国际化配置
-      localizationsDelegates: const [
-        AppLocalizations.delegate, // 我们生成的翻译代理
-        GlobalMaterialLocalizations.delegate, // Material 组件库翻译 (日期选择器等)
-        GlobalWidgetsLocalizations.delegate, // 文字方向
-        GlobalCupertinoLocalizations.delegate, // iOS 风格组件翻译
-      ],
-      supportedLocales: const [
-        Locale('en'), // 英文
-        Locale('zh'), // 中文
-      ],
-
-      home: const SplashScreen(),
-
-      // 4. 核心拦截逻辑：使用 builder 保持锁屏在最上层
-      builder: (context, child) {
-        return Stack(
-          children: [
-            // 底层是正常的 App 页面 (Navigator)
-            if (child != null) child,
-
-            // 顶层是锁屏页 (如果锁定且已启用)
-            if (_isLocked)
-              AppLockVerifyScreen(
-                onUnlocked: () => setState(() => _isLocked = false),
-              ),
+          // 国际化配置
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
           ],
+
+          // ✅ 5. 使用自动生成的支持语言列表 (包含 zh, en, ja, ko, es, fr)
+          // 这样您添加新的 arb 文件后，不需要手动改这里
+          supportedLocales: AppLocalizations.supportedLocales,
+
+          home: const SplashScreen(),
+
+          // 应用锁拦截器 (保持不变)
+          builder: (context, child) {
+            return Stack(
+              children: [
+                if (child != null) child,
+                if (_isLocked)
+                  Positioned.fill(
+                    child: AppLockVerifyScreen(
+                      onUnlocked: () {
+                        setState(() {
+                          _isLocked = false;
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            );
+          },
         );
       },
     );

@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/theme_provider.dart';
 import 'auth/login_screen.dart';
 import 'settings/app_lock_screen.dart';
+import '../providers/locale_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -158,6 +159,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 activeColor: AppColors.primary,
                 onChanged: (value) => themeProvider.toggleTheme(value),
               ),
+              const Divider(height: 1, indent: 56, endIndent: 16),
+
+              Consumer<LocaleProvider>(
+                builder: (context, localeProvider, _) {
+                  return ListTile(
+                    leading: const Icon(Icons.language, color: Colors.grey), // 图标颜色可根据主题调整
+                    title: Text(l10n.language), // "语言"
+                    trailing: Row( // 右侧显示当前语言 + 箭头
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _getLanguageName(localeProvider.locale?.languageCode),
+                          style: TextStyle(color: theme.disabledColor, fontSize: 14),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.arrow_forward_ios, size: 14, color: theme.disabledColor),
+                      ],
+                    ),
+                    onTap: () => _showLanguageBottomSheet(context, localeProvider),
+                  );
+                },
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -254,6 +277,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         children: children,
       ),
+    );
+  }
+
+  // 辅助方法 1：获取语言显示的名称
+  String _getLanguageName(String? code) {
+    switch (code) {
+      case 'en': return 'English';
+      case 'zh': return '中文';
+      case 'ja': return '日本語';
+      case 'ko': return '한국어';
+      case 'es': return 'Español';
+      case 'fr': return 'Français';
+      default: return 'System'; // 跟随系统
+    }
+  }
+
+  // 辅助方法 2：显示底部选择框
+  void _showLanguageBottomSheet(BuildContext context, LocaleProvider provider) {
+    final l10n = AppLocalizations.of(context)!;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(l10n.selectLanguage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              _buildLanguageItem(context, provider, 'English', 'en'),
+              _buildLanguageItem(context, provider, '简体中文', 'zh'),
+              _buildLanguageItem(context, provider, '日本語', 'ja'),
+              _buildLanguageItem(context, provider, '한국어', 'ko'),
+              _buildLanguageItem(context, provider, 'Español', 'es'),
+              _buildLanguageItem(context, provider, 'Français', 'fr'),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLanguageItem(BuildContext context, LocaleProvider provider, String name, String code) {
+    final isSelected = provider.locale?.languageCode == code;
+    return ListTile(
+      title: Text(name, textAlign: TextAlign.center,
+          style: TextStyle(
+              color: isSelected ? AppColors.primary : null,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+          )),
+      onTap: () {
+        provider.setLocale(Locale(code));
+        Navigator.pop(context);
+      },
     );
   }
 }

@@ -79,5 +79,8 @@
   "weatherRainy": "Rainy",
   "weatherSnowy": "Snowy",
   "weatherThunder": "Thunder",
-  "weatherWindy": "Windy"
+  "weatherWindy": "Windy",
+
+  "language": "Language",
+  "selectLanguage": "Select Language"
 }
