@@ -82,5 +82,8 @@
   "weatherWindy": "Windy",
 
   "language": "Language",
-  "selectLanguage": "Select Language"
+  "selectLanguage": "Select Language",
+
+  "deleteTitle": "Delete Confirmation",
+  "deleteConfirm": "Are you sure you want to delete {count} diaries?"
 }

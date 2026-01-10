@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:shared_preferences/shared_preferences.dart'; // ✅ 1. 引入 SP
+
 import '../constants/colors.dart';
 import '../services/database_helper.dart';
 import '../models/diary_model.dart';
@@ -10,7 +12,7 @@ import 'diary_edit_screen.dart';
 import 'settings_screen.dart';
 import 'diary_detail_screen.dart';
 import 'statistics_screen.dart';
-import '../l10n/app_localizations.dart'; // 确保导入
+import '../l10n/app_localizations.dart';
 
 class DiaryListScreen extends StatefulWidget {
   const DiaryListScreen({super.key});
@@ -38,495 +40,420 @@ class _DiaryListScreenState extends State<DiaryListScreen> {
   void initState() {
     super.initState();
     _loadDiaries();
-    _searchController.addListener(_onSearchChanged);
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
+  // ✅ 2. 修改加载逻辑：带数据隔离
+  // 📋 调试版加载方法
+  // 📋 调试版加载方法
   Future<void> _loadDiaries() async {
+    print("\n========== 🐛 [DEBUG START] ==========");
     setState(() => _isLoading = true);
-    try {
-      final diaries = await DatabaseHelper.instance.getAllDiaries();
-      setState(() {
-        _allDiaries = diaries;
-        _filterList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint("加载日记失败: $e");
+
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('current_user_id');
+
+    print("👉 [1] 从本地读取到的 userId: $userId");
+
+    if (userId == null) {
+      print("❌ [错误] userId 为空！说明没有登录成功，或者 SharedPreferences 没存进去。");
+      print("👉 请尝试点击设置 -> 退出登录，然后重新登录。");
       setState(() => _isLoading = false);
+      return;
     }
-  }
 
-  void _onSearchChanged() {
-    _filterList();
-  }
+    // 这一步是为了查看数据库里到底有没有数据（不管是谁的）
+    final allData = await DatabaseHelper.instance.database.then((db) => db.query('diaries'));
+    print("👉 [2] 数据库里【所有】日记总数: ${allData.length} 条");
+    if (allData.isNotEmpty) {
+      print("   --- 第一条数据样本 ---");
+      print("   ID: ${allData.first['id']}");
+      print("   Title: ${allData.first['title']}");
+      print("   UserId: ${allData.first['userId']} (如果是 null，说明保存时没存进去)");
+      print("   ---------------------");
+    }
 
-  void _filterList() {
-    final query = _searchController.text.toLowerCase();
+    // 正常查询当前用户的
+    final data = await DatabaseHelper.instance.getDiaries(userId);
+    print("👉 [3] 查询 userId=$userId 的日记结果: ${data.length} 条");
+
+    if (!mounted) return;
 
     setState(() {
-      _filteredDiaries = _allDiaries.where((diary) {
-        final plainContent = _parseQuillContent(diary.content).toLowerCase();
-        final matchesQuery = diary.title.toLowerCase().contains(query) ||
-            plainContent.contains(query);
+      _allDiaries = data;
+      _filteredDiaries = data;
+      _isLoading = false;
+    });
 
-        bool matchesDate = true;
-        if (_selectedDateRange != null) {
-          matchesDate = diary.date.isAfter(_selectedDateRange!.start.subtract(const Duration(seconds: 1))) &&
-              diary.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
-        }
+    print("========== 🐛 [DEBUG END] ==========\n");
+  }
 
-        bool matchesTag = true;
-        if (_selectedTag != null) {
-          matchesTag = diary.tags.contains(_selectedTag);
-        }
+  // ✅ 3. 补全筛选方法 (解决报错的关键)
+  void _filterDiaries(String query) {
+    List<DiaryEntry> temp = _allDiaries;
 
-        return matchesQuery && matchesDate && matchesTag;
+    // 关键词搜索 (标题或内容)
+    if (query.isNotEmpty) {
+      temp = temp.where((diary) {
+        final plainText = _parseQuillContent(diary.content);
+        return diary.title.contains(query) || plainText.contains(query);
       }).toList();
+    }
+
+    // 日期范围筛选
+    if (_selectedDateRange != null) {
+      temp = temp.where((diary) {
+        return diary.date.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+            diary.date.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+      }).toList();
+    }
+
+    // 标签筛选
+    if (_selectedTag != null) {
+      temp = temp.where((diary) => diary.tags.contains(_selectedTag)).toList();
+    }
+
+    setState(() {
+      _filteredDiaries = temp;
     });
   }
 
-  String _parseQuillContent(String jsonString) {
+  // 辅助：解析 Quill 内容为纯文本 (用于搜索)
+  String _parseQuillContent(String jsonContent) {
     try {
-      final doc = quill.Document.fromJson(jsonDecode(jsonString));
+      final doc = quill.Document.fromJson(jsonDecode(jsonContent));
       return doc.toPlainText().replaceAll('\n', ' ').trim();
     } catch (e) {
-      return "";
+      return jsonContent;
     }
   }
 
+  // 退出逻辑 (双击返回键)
+  Future<bool> _onWillPop() async {
+    if (_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedIds.clear();
+      });
+      return false;
+    }
+
+    final now = DateTime.now();
+    if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
+      _lastPressedAt = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('再按一次退出应用'), duration: Duration(seconds: 2)),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // 删除选中项
   Future<void> _deleteSelected() async {
-    for (var id in _selectedIds) {
-      await DatabaseHelper.instance.deleteDiary(id);
-    }
-    _selectedIds.clear();
-    _isSelectionMode = false;
-    _loadDiaries();
-    if (mounted) {
-      // 【修改】使用翻译变量
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.deleteSuccess)));
-    }
-  }
-
-  void _toggleSelection(int id) {
-    setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
-        if (_selectedIds.isEmpty) _isSelectionMode = false;
-      } else {
-        _selectedIds.add(id);
-        _isSelectionMode = true;
-      }
-    });
-  }
-
-  Future<void> _navigateToEdit() async {
-    final result = await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const DiaryEditScreen())
+    final l10n = AppLocalizations.of(context)!;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.deleteTitle),
+        content: Text(l10n.deleteConfirm(_selectedIds.length.toString())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.deleteAction, style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
-    if (result != null) {
+
+    if (confirm == true) {
+      for (var id in _selectedIds) {
+        await DatabaseHelper.instance.deleteDiary(id);
+      }
+      setState(() {
+        _isSelectionMode = false;
+        _selectedIds.clear();
+      });
       _loadDiaries();
     }
   }
 
-  Future<void> _pickDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: AppColors.primary,
-              onPrimary: Colors.white,
-              surface: Theme.of(context).cardColor,
-              onSurface: Theme.of(context).textTheme.bodyLarge!.color!,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) {
-      setState(() => _selectedDateRange = picked);
-      _filterList();
+  // 解析天气图标
+  IconData _getWeatherIcon(int weather) {
+    switch (weather) {
+      case 0: return Icons.wb_sunny;
+      case 1: return Icons.cloud;
+      case 2: return Icons.umbrella;
+      case 3: return Icons.ac_unit;
+      case 4: return Icons.thunderstorm;
+      case 5: return Icons.air;
+      default: return Icons.wb_sunny;
     }
   }
 
-  void _showTagFilterDialog() {
-    // 【修改】将标签列表改为动态获取翻译
-    final l10n = AppLocalizations.of(context)!;
-    final tags = [
-      l10n.tagLife,
-      l10n.tagWork,
-      l10n.tagTravel,
-      l10n.tagMood,
-      l10n.tagFood,
-      l10n.tagStudy
-    ];
+  // 解析心情图标
+  IconData _getMoodIcon(int mood) {
+    switch (mood) {
+      case 0: return Icons.sentiment_very_dissatisfied;
+      case 1: return Icons.sentiment_dissatisfied;
+      case 3: return Icons.sentiment_satisfied;
+      case 4: return Icons.sentiment_very_satisfied;
+      default: return Icons.sentiment_neutral;
+    }
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return AlertDialog(
-          backgroundColor: theme.cardColor,
-          // 【修改】标题翻译
-          title: Text(l10n.filterByTag, style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
-          content: Wrap(
-            spacing: 8,
-            children: tags.map((tag) => FilterChip(
-              label: Text(tag),
-              selected: _selectedTag == tag,
-              onSelected: (bool selected) {
-                setState(() => _selectedTag = selected ? tag : null);
-                _filterList();
-                Navigator.pop(context);
-              },
-              backgroundColor: theme.scaffoldBackgroundColor,
-              selectedColor: AppColors.primary.withOpacity(0.2),
-              checkmarkColor: AppColors.primary,
-              labelStyle: TextStyle(color: theme.textTheme.bodyMedium?.color),
-            )).toList(),
-          ),
-        );
-      },
-    );
+  Color _getMoodColor(int mood) {
+    switch (mood) {
+      case 0: return AppColors.error;
+      case 1: return Colors.orange;
+      case 3: return AppColors.success;
+      case 4: return AppColors.primary;
+      default: return Colors.grey;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = theme.primaryColor;
+    final backgroundColor = theme.scaffoldBackgroundColor;
+    final cardColor = theme.cardColor;
+    final textColor = theme.textTheme.bodyLarge?.color;
+    final secondaryTextColor = theme.textTheme.bodyMedium?.color;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) async {
-        if (didPop) return;
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: AppBar(
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          ),
+          backgroundColor: backgroundColor,
+          elevation: 0,
+          title: _showSearch
+              ? TextField(
+            controller: _searchController,
+            autofocus: true,
+            style: TextStyle(color: textColor),
+            decoration: InputDecoration(
+              hintText: l10n.searchHint,
+              border: InputBorder.none,
+              hintStyle: TextStyle(color: secondaryTextColor?.withOpacity(0.5)),
+            ),
+            onChanged: _filterDiaries,
+          )
+              : Text(
+            _isSelectionMode ? '${_selectedIds.length} Selected' : l10n.appTitle,
+            style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 22),
+          ),
+          actions: _isSelectionMode
+              ? [
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: _deleteSelected,
+            ),
+            IconButton(
+              icon: Icon(Icons.close, color: textColor),
+              onPressed: () {
+                setState(() {
+                  _isSelectionMode = false;
+                  _selectedIds.clear();
+                });
+              },
+            ),
+          ]
+              : [
+            if (!_showSearch)
+              IconButton(
+                icon: Icon(Icons.search, color: textColor),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = true;
+                  });
+                },
+              )
+            else
+              IconButton(
+                icon: Icon(Icons.close, color: textColor),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = false;
+                    _searchController.clear();
+                    _filterDiaries('');
+                  });
+                },
+              ),
+            IconButton(
+              icon: Icon(Icons.calendar_month,
+                  color: _selectedDateRange != null ? primaryColor : textColor),
+              onPressed: () async {
+                final picked = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                  builder: (context, child) {
+                    return Theme(
+                      data: theme.copyWith(
+                        colorScheme: theme.colorScheme.copyWith(primary: primaryColor),
+                      ),
+                      child: child!,
+                    );
+                  },
+                );
+                if (picked != null) {
+                  setState(() => _selectedDateRange = picked);
+                  _filterDiaries(_searchController.text);
+                } else if (_selectedDateRange != null) {
+                  setState(() => _selectedDateRange = null);
+                  _filterDiaries(_searchController.text);
+                }
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.bar_chart, color: textColor),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const StatisticsScreen()),
+                );
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.settings, color: textColor),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                ).then((_) => setState(() {}));
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: _isLoading
+            ? Center(child: CircularProgressIndicator(color: primaryColor))
+            : _filteredDiaries.isEmpty
+            ? Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.book_outlined, size: 80, color: secondaryTextColor?.withOpacity(0.3)),
+              const SizedBox(height: 16),
+              Text(l10n.noDiariesFound,
+                  style: TextStyle(color: secondaryTextColor?.withOpacity(0.5), fontSize: 16)),
+            ],
+          ),
+        )
+            : ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          itemCount: _filteredDiaries.length,
+          itemBuilder: (context, index) {
+            final diary = _filteredDiaries[index];
+            final isSelected = _selectedIds.contains(diary.id);
+            return _buildDiaryCard(diary, isSelected, theme);
+          },
+        ),
+        floatingActionButton: _isSelectionMode
+            ? null
+            : FloatingActionButton(
+          backgroundColor: primaryColor,
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: const Icon(Icons.add, color: Colors.white, size: 28),
+          onPressed: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DiaryEditScreen()),
+            );
+            if (result == true) {
+              _loadDiaries();
+            }
+          },
+        ),
+      ),
+    );
+  }
 
+  Widget _buildDiaryCard(DiaryEntry diary, bool isSelected, ThemeData theme) {
+    final dateStr = DateFormat('yyyy-MM-dd').format(diary.date);
+    final weekDay = DateFormat('EEE').format(diary.date);
+    final title = diary.title;
+    final content = _parseQuillContent(diary.content);
+    final mood = diary.mood;
+    final weather = diary.weather;
+    final tags = diary.tags;
+    final hasImage = diary.images.isNotEmpty;
+
+    final cardColor = theme.cardColor;
+    final secondaryTextColor = theme.textTheme.bodyMedium?.color;
+
+    return GestureDetector(
+      onLongPress: () {
+        setState(() {
+          _isSelectionMode = true;
+          _selectedIds.add(diary.id!);
+        });
+      },
+      onTap: () async {
         if (_isSelectionMode) {
           setState(() {
-            _isSelectionMode = false;
-            _selectedIds.clear();
+            if (isSelected) {
+              _selectedIds.remove(diary.id!);
+              if (_selectedIds.isEmpty) _isSelectionMode = false;
+            } else {
+              _selectedIds.add(diary.id!);
+            }
           });
-          return;
-        }
-
-        if (_showSearch) {
-          setState(() {
-            _showSearch = false;
-            _searchController.clear();
-            _selectedDateRange = null;
-            _selectedTag = null;
-            _filterList();
-          });
-          return;
-        }
-
-        final now = DateTime.now();
-        if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
-          _lastPressedAt = now;
-          ScaffoldMessenger.of(context).clearSnackBars();
-          // 【修改】退出提示翻译
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(l10n.tapAgainToExit),
-              duration: const Duration(seconds: 2),
-            ),
+        } else {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => DiaryDetailScreen(diary: diary)),
           );
-          return;
+          if (result == true) _loadDiaries();
         }
-
-        SystemNavigator.pop();
       },
-      child: Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        body: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              expandedHeight: _showSearch ? 140.0 : 60.0,
-              floating: true,
-              pinned: true,
-              elevation: 0,
-              backgroundColor: theme.scaffoldBackgroundColor,
-              iconTheme: theme.iconTheme,
-              leading: _isSelectionMode
-                  ? IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() {
-                _isSelectionMode = false;
-                _selectedIds.clear();
-              }))
-                  : null,
-              // 【修改】标题翻译： "已选" 和 App标题
-              title: _isSelectionMode
-                  ? Text('${l10n.selected} ${_selectedIds.length}', style: TextStyle(color: theme.textTheme.bodyLarge?.color))
-                  : Text(l10n.appTitle, style: TextStyle(color: theme.textTheme.bodyLarge?.color, fontWeight: FontWeight.bold),),
-              centerTitle: true,
-              actions: [
-                if (_isSelectionMode)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                    onPressed: _deleteSelected,
-                  )
-                else ...[
-                  IconButton(
-                    icon: Icon(_showSearch ? Icons.search_off : Icons.search, color: theme.iconTheme.color),
-                    onPressed: () => setState(() {
-                      _showSearch = !_showSearch;
-                      if (!_showSearch) {
-                        _searchController.clear();
-                        _selectedDateRange = null;
-                        _selectedTag = null;
-                        _filterList();
-                      }
-                    }),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.bar_chart_rounded),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const StatisticsScreen())),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings_outlined),
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
-                  ),
-                ]
-              ],
-              bottom: _showSearch ? PreferredSize(
-                preferredSize: const Size.fromHeight(80),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          // 【修改】搜索提示翻译
-                          hintText: l10n.searchHint,
-                          hintStyle: TextStyle(color: theme.hintColor),
-                          prefixIcon: Icon(Icons.search, color: theme.hintColor),
-                          filled: true,
-                          fillColor: theme.cardColor,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: Icon(Icons.calendar_month,
-                                    color: _selectedDateRange != null ? AppColors.primary : theme.hintColor),
-                                onPressed: _pickDateRange,
-                              ),
-                              IconButton(
-                                icon: Icon(Icons.local_offer,
-                                    color: _selectedTag != null ? AppColors.primary : theme.hintColor),
-                                onPressed: _showTagFilterDialog,
-                              ),
-                            ],
-                          ),
-                        ),
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                      if (_selectedDateRange != null || _selectedTag != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Row(
-                            children: [
-                              if (_selectedDateRange != null)
-                                _buildFilterChip(
-                                  label: '${DateFormat('MM/dd').format(_selectedDateRange!.start)} - ${DateFormat('MM/dd').format(_selectedDateRange!.end)}',
-                                  onDeleted: () { setState(() => _selectedDateRange = null); _filterList(); },
-                                ),
-                              if (_selectedTag != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8.0),
-                                  child: _buildFilterChip(
-                                    label: '#$_selectedTag',
-                                    onDeleted: () { setState(() => _selectedTag = null); _filterList(); },
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ) : null,
-            ),
-
-            if (_isLoading)
-              const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
-            else if (_filteredDiaries.isEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 100),
-                  child: Column(
-                    children: [
-                      Icon(Icons.inbox, size: 64, color: theme.disabledColor),
-                      const SizedBox(height: 16),
-                      // 【修改】空状态提示翻译
-                      Text(l10n.noDiariesFound, style: TextStyle(color: theme.disabledColor)),
-                    ],
-                  ),
-                ),
-              )
-            else SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                      final diary = _filteredDiaries[index];
-                      final isSelected = _selectedIds.contains(diary.id);
-                      final previewText = _parseQuillContent(diary.content);
-
-                      return DiaryCard(
-                        title: diary.title,
-                        content: previewText,
-                        date: diary.date,
-                        tags: diary.tags,
-                        mood: diary.mood,
-                        isSelected: isSelected,
-                        isSelectionMode: _isSelectionMode,
-                        onTap: () {
-                          if (_isSelectionMode) {
-                            if (diary.id != null) _toggleSelection(diary.id!);
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => DiaryDetailScreen(diary: diary)
-                              ),
-                            ).then((_) {
-                              _loadDiaries();
-                            });
-                          }
-                        },
-                        onLongPress: () {
-                          if (diary.id != null) _toggleSelection(diary.id!);
-                        },
-                      );
-                    },
-                    childCount: _filteredDiaries.length,
-                  ),
-                ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withOpacity(0.1) : cardColor,
+          borderRadius: BorderRadius.circular(20),
+          border: isSelected ? Border.all(color: AppColors.primary, width: 2) : null,
+          boxShadow: [
+            if (!isSelected && theme.brightness == Brightness.light)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
           ],
         ),
-        floatingActionButton: _isSelectionMode ? null : FloatingActionButton(
-          onPressed: _navigateToEdit,
-          backgroundColor: AppColors.primary,
-          child: const Icon(Icons.add, color: Colors.white),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChip({required String label, required VoidCallback onDeleted}) {
-    return Chip(
-      label: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white)),
-      backgroundColor: AppColors.primary,
-      deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white),
-      onDeleted: onDeleted,
-      visualDensity: VisualDensity.compact,
-    );
-  }
-}
-
-class DiaryCard extends StatelessWidget {
-  final String title;
-  final String content;
-  final DateTime date;
-  final List<String> tags;
-  final int mood;
-  final bool isSelected;
-  final bool isSelectionMode;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  const DiaryCard({
-    super.key,
-    required this.title,
-    required this.content,
-    required this.date,
-    required this.tags,
-    required this.mood,
-    required this.isSelected,
-    required this.isSelectionMode,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  IconData _getMoodIcon(int index) {
-    const icons = [
-      Icons.sentiment_very_dissatisfied,
-      Icons.sentiment_dissatisfied,
-      Icons.sentiment_neutral,
-      Icons.sentiment_satisfied,
-      Icons.sentiment_very_satisfied,
-    ];
-    if (index >= 0 && index < icons.length) return icons[index];
-    return Icons.sentiment_neutral;
-  }
-
-  Color _getMoodColor(int index) {
-    const colors = [
-      AppColors.error,
-      Colors.orange,
-      Colors.grey,
-      AppColors.success,
-      AppColors.primary,
-    ];
-    if (index >= 0 && index < colors.length) return colors[index];
-    return Colors.grey;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final secondaryTextColor = theme.brightness == Brightness.dark ? Colors.white70 : AppColors.textSecondaryLight;
-
-    // 【新增】1. 获取当前语言代码
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
-
-    // 【新增】2. 根据语言决定日期格式
-    // 中文：2023年10月24日
-    // 英文：Oct 24, 2023
-    final dateStr = isZh
-        ? DateFormat('yyyy年MM月dd日').format(date)
-        : DateFormat('MMM dd, yyyy').format(date);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 0,
-      color: theme.cardColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isSelected ? AppColors.primary : theme.dividerColor.withOpacity(0.05),
-          width: isSelected ? 2 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (isSelectionMode)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Icon(
-                    isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                    color: isSelected ? AppColors.primary : theme.disabledColor,
-                  ),
-                ),
+              // 日期列
+              Column(
+                children: [
+                  Text(DateFormat('dd').format(diary.date),
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  Text(weekDay.toUpperCase(),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: secondaryTextColor)),
+                  const SizedBox(height: 8),
+                  if (hasImage)
+                    const Icon(Icons.image, size: 16, color: Colors.grey)
+                ],
+              ),
+              const SizedBox(width: 16),
+              // 垂直分割线
+              Container(width: 2, height: 60, color: theme.dividerColor.withOpacity(0.5)),
+              const SizedBox(width: 16),
+              // 内容主体
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -536,9 +463,8 @@ class DiaryCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.calendar_today, size: 14, color: AppColors.primary),
-                            const SizedBox(width: 6),
-                            // 【修改】3. 使用动态生成的日期字符串
+                            Icon(_getWeatherIcon(weather), size: 16, color: secondaryTextColor),
+                            const SizedBox(width: 4),
                             Text(dateStr,
                                 style: TextStyle(color: secondaryTextColor, fontSize: 13)),
                           ],
@@ -553,17 +479,18 @@ class DiaryCard extends StatelessWidget {
                         maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: secondaryTextColor, height: 1.5)),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      children: tags.map((tag) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4)
-                        ),
-                        child: Text(tag, style: const TextStyle(color: AppColors.primary, fontSize: 10)),
-                      )).toList(),
-                    )
+                    if (tags.isNotEmpty)
+                      Wrap(
+                        spacing: 8,
+                        children: tags.map((tag) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4)
+                          ),
+                          child: Text(tag, style: const TextStyle(color: AppColors.primary, fontSize: 10)),
+                        )).toList(),
+                      )
                   ],
                 ),
               ),

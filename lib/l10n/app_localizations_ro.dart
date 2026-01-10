@@ -237,4 +237,12 @@ class AppLocalizationsRo extends AppLocalizations {
 
   @override
   String get selectLanguage => 'Selectează Limba';
+
+  @override
+  String get deleteTitle => 'Delete Confirmation';
+
+  @override
+  String deleteConfirm(Object count) {
+    return 'Are you sure you want to delete $count diaries?';
+  }
 }

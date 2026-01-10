@@ -234,6 +234,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get selectLanguage => '选择语言';
+
+  @override
+  String get deleteTitle => '确认删除';
+
+  @override
+  String deleteConfirm(Object count) {
+    return '确定要删除这 $count 篇日记吗？';
+  }
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).

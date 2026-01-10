@@ -6,10 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ✅ 1. 加这个引用
+
 import '../constants/colors.dart';
 import '../models/diary_model.dart';
 import '../services/database_helper.dart';
-import '../../l10n/app_localizations.dart'; // ✅ 确保导入国际化文件
+import '../../l10n/app_localizations.dart';
 
 class DiaryEditScreen extends StatefulWidget {
   final DiaryEntry? diary; // 如果是 null 表示新建，否则是编辑
@@ -45,7 +47,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     Icons.sentiment_very_satisfied,
   ];
 
-
   final List<IconData> _weatherIcons = [
     Icons.wb_sunny, Icons.cloud,  Icons.umbrella,
     Icons.ac_unit, Icons.thunderstorm, Icons.air,
@@ -63,9 +64,9 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     _titleController = TextEditingController(text: widget.diary?.title ?? '');
     _selectedDate = widget.diary?.date ?? DateTime.now();
     _selectedMood = widget.diary?.mood ?? 2;
-    _selectedWeather = widget.diary?.weather ?? 0; // ✅ 恢复天气字段
+    _selectedWeather = widget.diary?.weather ?? 0;
     _selectedTags = List.from(widget.diary?.tags ?? []);
-    _selectedImages = List.from(widget.diary?.images ?? []); // ✅ 恢复图片回显
+    _selectedImages = List.from(widget.diary?.images ?? []);
 
     if (widget.diary != null && widget.diary!.content.isNotEmpty) {
       try {
@@ -87,7 +88,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     super.dispose();
   }
 
-  // ✅ 核心修复：保存逻辑
+  // ✅ 核心修复：保存逻辑 (只改了这里)
   Future<void> _saveDiary() async {
     final l10n = AppLocalizations.of(context)!;
     final contentJson = jsonEncode(_quillController.document.toDelta().toJson());
@@ -106,9 +107,8 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       final file = File(imgPath);
       if (await file.exists()) {
         if (path.isWithin(appDir.path, imgPath)) {
-          finalImagePaths.add(imgPath); // 已在沙盒中
+          finalImagePaths.add(imgPath);
         } else {
-          // 复制到沙盒
           final fileName = path.basename(imgPath);
           final newPath = '${appDir.path}/$fileName';
           await file.copy(newPath);
@@ -117,29 +117,33 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       }
     }
 
-    // 2. 创建对象 (✅ 修复参数报错)
+    // ✅ 2. 获取当前用户 ID
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('current_user_id');
+
+    // 3. 创建对象 (带 userId)
     final newDiary = DiaryEntry(
       id: widget.diary?.id,
       title: _titleController.text.isEmpty ? '无标题' : _titleController.text,
       content: contentJson,
       date: _selectedDate,
       mood: _selectedMood,
-      weather: _selectedWeather, // ✅ 补上 weather
+      weather: _selectedWeather,
       tags: _selectedTags,
-      images: finalImagePaths,   // ✅ 补上 images
-      // isSynced: false,        // ❌ 删除 model 中不存在的 isSynced
+      images: finalImagePaths,
+      userId: userId, // ✅ 存入 ID
     );
 
-    // 3. 写入数据库 (✅ 修正方法名为 insertDiary)
+    // 4. 写入数据库
     if (widget.diary == null) {
-      await DatabaseHelper.instance.insertDiary(newDiary); // ✅ 用 insertDiary
+      await DatabaseHelper.instance.insertDiary(newDiary);
     } else {
       await DatabaseHelper.instance.updateDiary(newDiary);
     }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.diary == null ? l10n.saveButton : '更新成功')) // 这里简单用 saveButton 代替提示，也可加新词条
+          SnackBar(content: Text(widget.diary == null ? l10n.saveButton : '更新成功'))
       );
       Navigator.pop(context, true);
     }
@@ -165,23 +169,23 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ 这里往下的代码，我完全复制了您提供的版本，保证 UI 不变
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
     final secondaryColor = theme.brightness == Brightness.dark ? Colors.white70 : AppColors.textSecondaryLight;
 
     String getWeatherName(int index) {
       switch (index) {
-        case 0: return l10n.weatherSunny;    // 晴天
-        case 1: return l10n.weatherCloudy;   // 多云
-        case 2: return l10n.weatherRainy;    // 雨天
-        case 3: return l10n.weatherSnowy;    // 雪天
-        case 4: return l10n.weatherThunder;  // 雷雨
-        case 5: return l10n.weatherWindy;    // 大风
-        default: return l10n.weatherLabel;   // 默认显示 "天气"
+        case 0: return l10n.weatherSunny;
+        case 1: return l10n.weatherCloudy;
+        case 2: return l10n.weatherRainy;
+        case 3: return l10n.weatherSnowy;
+        case 4: return l10n.weatherThunder;
+        case 5: return l10n.weatherWindy;
+        default: return l10n.weatherLabel;
       }
     }
 
-    // 动态翻译标签 (如果标签不在列表里则原样显示)
     String getLocalizedTag(String tag) {
       if (tag == 'Life') return l10n.tagLife;
       if (tag == 'Work') return l10n.tagWork;
@@ -189,7 +193,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       if (tag == 'Mood') return l10n.tagMood;
       if (tag == 'Food') return l10n.tagFood;
       if (tag == 'Study') return l10n.tagStudy;
-      // 兼容中文旧标签
       if (tag == '生活') return l10n.tagLife;
       if (tag == '工作') return l10n.tagWork;
       if (tag == '旅行') return l10n.tagTravel;
@@ -221,7 +224,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
       ),
       body: Column(
         children: [
-          // 工具栏动画容器
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             height: _showToolbar ? 60 : 0,
@@ -229,7 +231,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
               physics: const NeverScrollableScrollPhysics(),
               child: quill.QuillSimpleToolbar(
                 configurations: quill.QuillSimpleToolbarConfigurations(
-                  controller: _quillController, // ✅ v9 写法
+                  controller: _quillController,
                   showFontFamily: false,
                   showSubscript: false,
                   showSuperscript: false,
@@ -259,7 +261,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16.0),
                 children: [
-                  // 标题输入
                   TextField(
                     controller: _titleController,
                     decoration: InputDecoration(
@@ -270,7 +271,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
 
-                  // 图片横向展示
                   if (_selectedImages.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12.0),
@@ -312,7 +312,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                       ),
                     ),
 
-                  // 属性选择区 (日期、心情、天气、标签)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
@@ -329,15 +328,13 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                               ]),
                             ),
                             const SizedBox(width: 24),
-                            // 心情选择
                             _buildSelector(context, _moodIcons[_selectedMood], l10n.moodLabel,
                                     () => _showIconPicker(l10n.moodLabel, _moodIcons, (i) => setState(() => _selectedMood = i))),
                             const SizedBox(width: 24),
-                            // 天气选择 (这里暂时简单用“天气”二字，您可以在 arb 加 key)
                             _buildSelector(
                                 context,
                                 _weatherIcons[_selectedWeather],
-                                getWeatherName(_selectedWeather), // <--- ✅ 这里改成调用刚才定义的函数
+                                getWeatherName(_selectedWeather),
                                     () => _showIconPicker(l10n.weatherLabel, _weatherIcons, (i) => setState(() => _selectedWeather = i))
                             ),
                           ],
@@ -355,7 +352,7 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
                             )),
                             ActionChip(
                               avatar: const Icon(Icons.image_outlined, size: 16),
-                              label: const Text('Add Img'), // 可在 arb 加 imageBtn
+                              label: const Text('Add Img'),
                               onPressed: _pickImage,
                             ),
                             ActionChip(
@@ -371,13 +368,10 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
 
                   const Divider(),
 
-                  // 编辑器区域
                   Container(
                     constraints: const BoxConstraints(minHeight: 300),
                     child: quill.QuillEditor.basic(
                       configurations: quill.QuillEditorConfigurations(
-                        // ❌ 删除 focusNode: _editorFocusNode,
-                        // 让 Quill 内部自己管理焦点，通常能解决问题且不影响使用
                         controller: _quillController,
                         placeholder: l10n.contentHint,
                         padding: EdgeInsets.zero,
@@ -396,7 +390,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
-  // 辅助方法：构建选择器
   Widget _buildSelector(BuildContext context, IconData icon, String label, VoidCallback onTap) {
     final theme = Theme.of(context);
     final secondaryColor = theme.brightness == Brightness.dark ? Colors.white70 : AppColors.textSecondaryLight;
@@ -414,7 +407,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     );
   }
 
-  // 辅助方法：图标选择弹窗
   void _showIconPicker(String title, List<IconData> icons, Function(int) onSelected) {
     showModalBottomSheet(context: context, builder: (ctx) {
       return Container(
@@ -431,7 +423,6 @@ class _DiaryEditScreenState extends State<DiaryEditScreen> {
     });
   }
 
-  // 辅助方法：标签选择弹窗
   void _showTagPicker() {
     showModalBottomSheet(context: context, builder: (ctx) {
       return Container(

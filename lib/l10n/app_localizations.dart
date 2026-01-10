@@ -590,6 +590,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Select Language'**
   String get selectLanguage;
+
+  /// No description provided for @deleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Confirmation'**
+  String get deleteTitle;
+
+  /// No description provided for @deleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete {count} diaries?'**
+  String deleteConfirm(Object count);
 }
 
 class _AppLocalizationsDelegate

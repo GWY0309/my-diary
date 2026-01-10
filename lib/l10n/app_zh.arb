@@ -82,5 +82,8 @@
   "weatherWindy": "大风",
 
   "language": "语言",
-  "selectLanguage": "选择语言"
+  "selectLanguage": "选择语言",
+
+  "deleteTitle": "确认删除",
+  "deleteConfirm": "确定要删除这 {count} 篇日记吗？"
 }

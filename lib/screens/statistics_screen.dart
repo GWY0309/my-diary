@@ -1,9 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ✅ 1. 加引用
+
 import '../constants/colors.dart';
 import '../services/database_helper.dart';
-import '../../l10n/app_localizations.dart'; // ✅ 1. 引入国际化文件
+import '../../l10n/app_localizations.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
@@ -36,11 +38,20 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     _loadStatistics();
   }
 
-  // 加载真实数据
+  // ✅ 核心修复：加载数据带上 userId
   Future<void> _loadStatistics() async {
-    final count = await DatabaseHelper.instance.getDiaryCount();
-    final weekly = await DatabaseHelper.instance.getWeeklyStats();
-    final moods = await DatabaseHelper.instance.getMoodStats();
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('current_user_id');
+
+    if (userId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    // 传入 userId
+    final count = await DatabaseHelper.instance.getDiaryCount(userId);
+    final weekly = await DatabaseHelper.instance.getWeeklyStats(userId);
+    final moods = await DatabaseHelper.instance.getMoodStats(userId);
 
     if (mounted) {
       setState(() {
@@ -52,8 +63,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
 
-  // ✅ 辅助方法：获取心情的多语言标签
-  // 这样既保留了您原本的“超棒/极差”语义，又能支持英文
+  // 辅助方法：获取心情的多语言标签
   String _getMoodLabel(int index, bool isZh) {
     if (isZh) {
       const labels = ['极差', '难过', '一般', '开心', '超棒'];
@@ -66,10 +76,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ UI 部分完全保持您提供的代码原样
     final theme = Theme.of(context);
-    final l10n = AppLocalizations.of(context)!; // ✅ 2. 获取翻译实例
+    final l10n = AppLocalizations.of(context)!;
     final isDark = theme.brightness == Brightness.dark;
-    final isZh = Localizations.localeOf(context).languageCode == 'zh'; // 判断语言环境
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
     final cardColor = theme.cardColor;
     final gridColor = isDark ? Colors.white10 : Colors.black12;
 
@@ -80,7 +91,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        // ✅ 替换标题
         title: Text(l10n.statisticsTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: theme.scaffoldBackgroundColor,
@@ -92,20 +102,15 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. 核心指标概览
             Row(
               children: [
-                // ✅ 替换“累计日记”
                 _buildStatCard(context, l10n.diaryCountTitle, '$_totalDiaries', Icons.book_rounded, AppColors.primary),
                 const SizedBox(width: 16),
-                // ✅ 替换“记录心情” -> 使用 "心情" (Mood) 标签
                 _buildStatCard(context, l10n.tagMood, '${_moodData.values.fold<int>(0, (p, c) => p + c)}', Icons.favorite, AppColors.error),
               ],
             ),
             const SizedBox(height: 24),
 
-            // 2. 写作趋势 (近7天)
-            // ✅ 替换“近7天写作热度” -> 使用 moodChartTitle (心情走势/趋势)
             Text(l10n.moodChartTitle, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Container(
@@ -120,7 +125,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       tooltipMargin: 8,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         return BarTooltipItem(
-                          // ✅ Tooltip 简单的单位处理
                           '${rod.toY.round()}',
                           const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         );
@@ -166,8 +170,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // 3. 心情分布饼图
-            // ✅ 替换“心情分布”
             Text(l10n.moodDistribution, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             Container(
@@ -175,14 +177,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(24)),
               child: _moodData.values.every((v) => v == 0)
-              // ✅ 替换“暂无数据”
                   ? Center(child: Text(l10n.noDiariesFound, style: TextStyle(color: theme.disabledColor)))
                   : Row(
                 children: [
                   Expanded(
                     child: PieChart(
                       PieChartData(
-                        // ✅ 保留了您原本的触摸交互逻辑
                         pieTouchData: PieTouchData(
                           touchCallback: (FlTouchEvent event, pieTouchResponse) {
                             setState(() {
@@ -197,22 +197,19 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         borderData: FlBorderData(show: false),
                         sectionsSpace: 2,
                         centerSpaceRadius: 40,
-                        sections: _generatePieSections(), // 使用真实数据 + 动态效果
+                        sections: _generatePieSections(),
                       ),
                     ),
                   ),
                   const SizedBox(width: 24),
-                  // 图例
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: List.generate(5, (index) {
-                      // ✅ 动态生成图例文字 (支持中英切换)
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8.0),
                         child: _Indicator(
                           color: _moodColors[index],
-                          // 如：超棒 (5) or Amazing (5)
                           text: '${_getMoodLabel(index, isZh)} (${_moodData[index] ?? 0})',
                           isSquare: false,
                         ),
@@ -228,7 +225,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
-  // 生成柱状图数据 (保留原有样式)
   List<BarChartGroupData> _generateBarGroups(bool isDark) {
     return List.generate(7, (i) {
       return BarChartGroupData(
@@ -252,20 +248,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     });
   }
 
-  // 生成饼图数据 (保留动态放大效果)
   List<PieChartSectionData> _generatePieSections() {
     List<PieChartSectionData> sections = [];
     int total = _moodData.values.fold<int>(0, (a, b) => a + b);
 
     if (total == 0) return [];
 
-    // 关键逻辑：使用 currentSectionIndex 确保触摸索引正确
     int currentSectionIndex = 0;
 
     for (int i = 0; i < 5; i++) {
       final count = _moodData[i] ?? 0;
       if (count > 0) {
-        // ✅ 这里的 _touchedIndex 逻辑保留了您想要的动态放大效果
         final isTouched = currentSectionIndex == _touchedIndex;
         final fontSize = isTouched ? 18.0 : 14.0;
         final radius = isTouched ? 60.0 : 50.0;
