@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/diary_model.dart';
+import 'package:crypto/crypto.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -36,6 +39,13 @@ class DatabaseHelper {
         tags TEXT NOT NULL,
         images TEXT,
         date TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE,
+        password TEXT
       )
     ''');
   }
@@ -115,5 +125,43 @@ class DatabaseHelper {
       stats[row['mood'] as int] = row['count'] as int;
     }
     return stats;
+  }
+
+  String _hashPassword(String password) {
+    var bytes = utf8.encode(password);
+    var digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  Future<bool> registerUser(String email, String password) async {
+    final db = await instance.database;
+    try {
+      await db.insert('users', {
+        'email': email,
+        'password': _hashPassword(password), // 存密文
+      });
+      return true;
+    } catch (e) {
+      // 邮箱可能重复 (UNIQUE 约束)
+      return false;
+    }
+  }
+
+  // 验证登录
+  Future<bool> loginUser(String email, String password) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'users',
+      where: 'email = ? AND password = ?',
+      whereArgs: [email, _hashPassword(password)], // 比对密文
+    );
+    return maps.isNotEmpty;
+  }
+
+  // 检查邮箱是否已存在
+  Future<bool> isEmailExist(String email) async {
+    final db = await instance.database;
+    final result = await db.query('users', where: 'email = ?', whereArgs: [email]);
+    return result.isNotEmpty;
   }
 }

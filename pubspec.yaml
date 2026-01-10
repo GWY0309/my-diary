@@ -11,6 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  mailer: ^6.0.0
+  email_otp: ^2.1.0
+  crypto: ^3.0.3
+
   # 【新增】国际化支持库
   flutter_localizations:
     sdk: flutter
